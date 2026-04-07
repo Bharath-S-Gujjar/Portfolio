@@ -1,7 +1,7 @@
 import { Mail, Phone, Github, Linkedin } from "lucide-react";
 import { useState, useRef } from "react";
-import emailjs from "@emailjs/browser";
 import { useToast } from "@/hooks/use-toast";
+import { sendContactMessage } from "@/lib/api";
 import ScrollReveal from "./ScrollReveal";
 import { motion } from "framer-motion";
 
@@ -20,11 +20,11 @@ const ContactSection = () => {
     }
     setSending(true);
     try {
-      await emailjs.sendForm("service_ctdnl3j", "template_dw9gxxv", formRef.current!, "inKgdUKZ1Qp9BujSi");
+      await sendContactMessage(formData);
       toast({ title: "Message sent successfully! 🎉" });
       setFormData({ name: "", email: "", message: "" });
-    } catch {
-      toast({ title: "Failed to send message. Please try again.", variant: "destructive" });
+    } catch (err: any) {
+      toast({ title: err.message || "Failed to send message. Please try again.", variant: "destructive" });
     } finally {
       setSending(false);
     }
@@ -39,7 +39,7 @@ const ContactSection = () => {
     <div className="relative">
       <input
         type={type}
-        name={name === "name" ? "from_name" : name === "email" ? "from_email" : name}
+        name={name}
         value={formData[name as keyof typeof formData]}
         onChange={(e) => setFormData({ ...formData, [name]: e.target.value })}
         onFocus={() => setFocused(name)}
@@ -74,7 +74,7 @@ const ContactSection = () => {
               </p>
               <div className="space-y-4">
                 {[
-                  { icon: Mail, label: "bharathsgujjar634@gmail.com", href: "mailto:bharathsgujjar634@gmail.com" },
+                  { icon: Mail, label: "bharathsgujjar635@gmail.com", href: "mailto:bharathsgujjar635@gmail.com" },
                   { icon: Phone, label: "+91 7022441738", href: "tel:+917022441738" },
                   { icon: Linkedin, label: "LinkedIn", href: "https://linkedin.com" },
                   { icon: Github, label: "GitHub", href: "https://github.com" },
