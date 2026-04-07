@@ -1,9 +1,55 @@
+import React, { useState, useRef } from "react";
 import { Mail, Phone, Github, Linkedin } from "lucide-react";
-import { useState, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { sendContactMessage } from "@/lib/api";
 import ScrollReveal from "./ScrollReveal";
 import { motion } from "framer-motion";
+
+const FloatingInput = ({
+  name,
+  label,
+  type = "text",
+  value,
+  onChange,
+  onFocus,
+  onBlur,
+  className,
+  isFocused,
+}: {
+  name: string;
+  label: string;
+  type?: string;
+  value: string;
+  onChange: React.ChangeEventHandler<HTMLInputElement>;
+  onFocus: React.FocusEventHandler<HTMLInputElement>;
+  onBlur: React.FocusEventHandler<HTMLInputElement>;
+  className: string;
+  isFocused: boolean;
+}) => (
+  <div className="relative">
+    <input
+      id={name}
+      type={type}
+      name={name}
+      value={value}
+      onChange={onChange}
+      onFocus={onFocus}
+      onBlur={onBlur}
+      className={className}
+      placeholder={label}
+    />
+    <label
+      htmlFor={name}
+      className={`absolute left-4 transition-all duration-300 pointer-events-none ${
+        value || isFocused
+          ? "text-xs text-primary -top-2.5 bg-background px-2 rounded"
+          : "text-sm text-muted-foreground top-3.5"
+      }`}
+    >
+      {label}
+    </label>
+  </div>
+);
 
 const ContactSection = () => {
   const [formData, setFormData] = useState({ name: "", email: "", message: "" });
@@ -34,30 +80,6 @@ const ContactSection = () => {
     `w-full px-4 py-3.5 rounded-xl glass text-foreground placeholder:text-transparent focus:outline-none transition-all duration-300 peer ${
       focused === field ? "border-primary/50 shadow-[0_0_20px_hsl(250_90%_65%/0.15)]" : "border-border/50"
     }`;
-
-  const FloatingInput = ({ name, label, type = "text" }: { name: string; label: string; type?: string }) => (
-    <div className="relative">
-      <input
-        type={type}
-        name={name}
-        value={formData[name as keyof typeof formData]}
-        onChange={(e) => setFormData({ ...formData, [name]: e.target.value })}
-        onFocus={() => setFocused(name)}
-        onBlur={() => setFocused(null)}
-        className={inputClass(name)}
-        placeholder={label}
-      />
-      <label
-        className={`absolute left-4 transition-all duration-300 pointer-events-none ${
-          formData[name as keyof typeof formData] || focused === name
-            ? "text-xs text-primary -top-2.5 bg-background px-2 rounded"
-            : "text-sm text-muted-foreground top-3.5"
-        }`}
-      >
-        {label}
-      </label>
-    </div>
-  );
 
   return (
     <section id="contact" className="py-28 relative">
@@ -95,8 +117,27 @@ const ContactSection = () => {
 
           <ScrollReveal direction="right" delay={0.2}>
             <form ref={formRef} className="space-y-5" onSubmit={handleSubmit}>
-              <FloatingInput name="name" label="Your Name" />
-              <FloatingInput name="email" label="Your Email" type="email" />
+              <FloatingInput
+                name="name"
+                label="Your Name"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                onFocus={() => setFocused("name")}
+                onBlur={() => setFocused(null)}
+                className={inputClass("name")}
+                isFocused={focused === "name"}
+              />
+              <FloatingInput
+                name="email"
+                label="Your Email"
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                onFocus={() => setFocused("email")}
+                onBlur={() => setFocused(null)}
+                className={inputClass("email")}
+                isFocused={focused === "email"}
+              />
               <div className="relative">
                 <textarea
                   name="message"
