@@ -98,8 +98,8 @@ const ContactSection = () => {
                 {[
                   { icon: Mail, label: "bharathsgujjar635@gmail.com", href: "mailto:bharathsgujjar635@gmail.com" },
                   { icon: Phone, label: "+91 7022441738", href: "tel:+917022441738" },
-                  { icon: Linkedin, label: "LinkedIn", href: "https://linkedin.com" },
-                  { icon: Github, label: "GitHub", href: "https://github.com" },
+                  { icon: Linkedin, label: "LinkedIn", href: "https://linkedin.com/in/bharath-s-gujjar-5b0976297" },
+                  { icon: Github, label: "GitHub", href: "https://github.com/Bharath-S-Gujjar" },
                 ].map((item) => (
                   <motion.a
                     key={item.label}
