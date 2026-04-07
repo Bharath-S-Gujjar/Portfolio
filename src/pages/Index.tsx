@@ -6,6 +6,7 @@ import AchievementsSection from "@/components/AchievementsSection";
 import ProjectsSection from "@/components/ProjectsSection";
 import ContactSection from "@/components/ContactSection";
 import AnimatedBackground from "@/components/AnimatedBackground";
+import AIChatbot from "@/components/AIChatbot";
 import { motion } from "framer-motion";
 
 const Index = () => (
@@ -26,6 +27,7 @@ const Index = () => (
     >
       © 2025 Bharath S Gujjar. All rights reserved.
     </motion.footer>
+    <AIChatbot />
   </div>
 );
 
