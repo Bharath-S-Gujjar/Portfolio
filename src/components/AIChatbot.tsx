@@ -10,6 +10,7 @@ const AIChatbot = () => {
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [sessionId, setSessionId] = useState<string | undefined>();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -31,8 +32,9 @@ const AIChatbot = () => {
     setLoading(true);
 
     try {
-      const reply = await sendChatMessage(text, [...messages, userMsg]);
-      setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
+      const response = await sendChatMessage(text, [...messages, userMsg], sessionId);
+      setSessionId(response.sessionId);
+      setMessages((prev) => [...prev, { role: "assistant", content: response.reply }]);
     } catch {
       setMessages((prev) => [
         ...prev,

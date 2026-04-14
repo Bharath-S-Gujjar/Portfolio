@@ -25,6 +25,12 @@ export interface ChatMessage {
   content: string;
 }
 
+export interface ChatResponse {
+  success: boolean;
+  reply: string;
+  sessionId: string;
+}
+
 // ─── Contact ───
 export async function sendContactMessage(data: ContactPayload): Promise<{ success: boolean; message: string }> {
   const res = await fetch(`${API_BASE_URL}/api/contact`, {
@@ -47,16 +53,24 @@ export async function fetchCertificates(): Promise<Certificate[]> {
 }
 
 // ─── AI Chat ───
-export async function sendChatMessage(message: string, history: ChatMessage[]): Promise<string> {
+export async function sendChatMessage(
+  message: string,
+  history: ChatMessage[],
+  sessionId?: string
+): Promise<ChatResponse> {
   const res = await fetch(`${API_BASE_URL}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, history }),
+    body: JSON.stringify({ message, history, sessionId }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: "Failed to get response" }));
     throw new Error(err.message || "Failed to get response");
   }
   const data = await res.json();
-  return data.reply || data.message || data.response;
+  return {
+    success: data.success,
+    reply: data.reply || data.message || data.response,
+    sessionId: data.sessionId
+  };
 }

@@ -17,9 +17,9 @@ A modern, responsive portfolio website built with React, TypeScript, Tailwind CS
 
 ### Backend (In Progress 🔄)
 - ✅ Contact API - Send emails via nodemailer
-- ✅ Certificates API - Basic CRUD operations (in-memory)
-- ✅ AI Chat API - Placeholder implementation
-- 🔄 Database integration (MongoDB/PostgreSQL)
+- ✅ Certificates API - MongoDB backend with CRUD operations
+- ✅ AI Chat API - Real OpenAI GPT integration with conversation history
+- 🔄 File upload for certificate PDFs
 - 🔄 Authentication for admin panel
 
 ## 🛠️ Tech Stack

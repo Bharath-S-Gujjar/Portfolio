@@ -14,15 +14,19 @@ Express.js backend for the portfolio website with contact form functionality.
    npm install
    ```
 
-3. Create a `.env` file with your Gmail credentials and MongoDB connection string:
+3. Create a `.env` file with your Gmail credentials, MongoDB connection string, and OpenAI API key:
    ```
    EMAIL_USER=your-email@gmail.com
    EMAIL_PASS=your-app-password
    MONGODB_URI=mongodb://127.0.0.1:27017/portfolio
+   OPENAI_API_KEY=your-openai-api-key
    PORT=5000
    ```
 
-   **Important:** For Gmail, you need to use an App Password, not your regular password. Generate one at https://myaccount.google.com/apppasswords
+   **Important Notes:** 
+   - Use Gmail App Password for `EMAIL_PASS`, not your regular password. Generate one at https://myaccount.google.com/apppasswords
+   - Get OpenAI API key from https://platform.openai.com/api-keys
+   - Configure `MONGODB_URI` for your MongoDB database
 
 4. Start the development server:
    ```bash
@@ -85,13 +89,17 @@ Creates a new certificate.
 ```
 
 ### POST /api/chat
-AI chat endpoint (placeholder implementation).
+AI chat endpoint with OpenAI integration and conversation history storage.
 
 **Request Body:**
 ```json
 {
-  "message": "Tell me about yourself",
-  "history": []
+  "message": "Tell me about your experience",
+  "history": [
+    { "role": "user", "content": "Hi" },
+    { "role": "assistant", "content": "Hello! How can I help?" }
+  ],
+  "sessionId": "optional-session-id"
 }
 ```
 
@@ -99,12 +107,17 @@ AI chat endpoint (placeholder implementation).
 ```json
 {
   "success": true,
-  "reply": "I'm Bharath, a passionate full-stack developer..."
+  "reply": "I'm Bharath, a full-stack developer with expertise in React, Node.js...",
+  "sessionId": "session_1234567890"
 }
 ```
 
-### GET /api/health
-Health check endpoint.
+**Features:**
+- Real OpenAI GPT integration
+- Conversation history persistence in MongoDB
+- Session tracking for multi-turn conversations
+- Context-aware responses about Bharath's experience and projects
+
 
 ## Features Implemented
 - ✅ Contact API with nodemailer Gmail integration
