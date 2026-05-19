@@ -570,7 +570,7 @@ GOLDEN RULES
         console.log('🔄 Calling Groq API for:', message.substring(0, 50));
 
         const completion = await groq.chat.completions.create({
-          model: 'llama3-70b-8192',   // ← fixed: was 'openai/gpt-oss-20b' (invalid)
+          model: 'llama-3.3-70b-versatile',   // ← fixed: was 'openai/gpt-oss-20b' (invalid)
           messages,
           max_tokens: 500,
           temperature: 0.8,
