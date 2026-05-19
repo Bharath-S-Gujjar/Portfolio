@@ -2,7 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const express = require('express');
-const nodemailer = require('nodemailer');
+const axios = require('axios');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const multer = require('multer');
@@ -12,59 +12,67 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-// const EMAIL_USER = process.env.EMAIL_USER;
-// const EMAIL_PASS = process.env.EMAIL_PASS;
 const MONGODB_URI = process.env.MONGODB_URI;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const MOCK_AI_CHAT = process.env.MOCK_AI_CHAT === 'true';
 
-// if (!EMAIL_USER || !EMAIL_PASS) {
-//   console.error('Missing EMAIL_USER or EMAIL_PASS in backend/.env');
-//   process.exit(1);
-// }
-
-const SMTP_HOST = process.env.SMTP_HOST;
-const SMTP_PORT = process.env.SMTP_PORT;
-const SMTP_USER = process.env.SMTP_USER;
-const SMTP_PASS = process.env.SMTP_PASS;
+// ── Validation ────────────────────────────────────────────────────────────────
 
 if (!MONGODB_URI) {
-  console.error('Missing MONGODB_URI in backend/.env');
+  console.error('✗ Missing MONGODB_URI in .env');
   process.exit(1);
 }
 
-if (!GROQ_API_KEY) {
-  console.warn('Warning: GROQ_API_KEY not set. AI Chat will use mock responses.');
+if (!process.env.BREVO_API_KEY) {
+  console.warn('⚠ Warning: BREVO_API_KEY not set. Contact form emails will fail.');
 }
+
+if (!process.env.SENDER_EMAIL) {
+  console.warn('⚠ Warning: SENDER_EMAIL not set. Contact form emails will fail.');
+}
+
+if (!process.env.CONTACT_RECEIVER_EMAIL) {
+  console.warn('⚠ Warning: CONTACT_RECEIVER_EMAIL not set. Falling back to SENDER_EMAIL.');
+}
+
+if (!GROQ_API_KEY) {
+  console.warn('⚠ Warning: GROQ_API_KEY not set. AI Chat will use mock responses.');
+}
+
+// ── Models ────────────────────────────────────────────────────────────────────
 
 const ContactMessage = require('./models/ContactMessage');
 const Certificate = require('./models/Certificate');
 const Project = require('./models/Project');
 const ChatSession = require('./models/ChatSession');
 
-// Initialize Groq client
-const groq = new Groq({
-  apiKey: GROQ_API_KEY
-});
+// ── Groq client ───────────────────────────────────────────────────────────────
 
-// Middleware
+const groq = new Groq({ apiKey: GROQ_API_KEY });
+
+// ── Middleware ─────────────────────────────────────────────────────────────────
+
 const corsOptions = {
   origin: process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
+    ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
     : ['http://localhost:3000', 'http://localhost:8080'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
 };
 
 app.use(cors(corsOptions));
 app.use(express.json());
 
+// ── File storage ──────────────────────────────────────────────────────────────
+
 const uploadBaseDir = path.join(__dirname, 'uploads');
 const uploadCertificatesDir = path.join(uploadBaseDir, 'certificates');
 const cvDir = path.join(__dirname, '..', 'public');
+
 fs.mkdirSync(uploadCertificatesDir, { recursive: true });
 fs.mkdirSync(cvDir, { recursive: true });
+
 app.use('/uploads', express.static(uploadBaseDir));
 
 const fileStorage = multer.diskStorage({
@@ -72,7 +80,7 @@ const fileStorage = multer.diskStorage({
   filename: (req, file, cb) => {
     const safeName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
     cb(null, `${Date.now()}-${safeName}`);
-  }
+  },
 });
 
 const cvStorage = multer.diskStorage({
@@ -80,29 +88,29 @@ const cvStorage = multer.diskStorage({
   filename: (req, file, cb) => cb(null, 'cv.pdf'),
 });
 
-const uploadCV = multer({
-  storage: cvStorage,
-  limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = ['application/pdf'];
-    if (!allowedTypes.includes(file.mimetype)) {
-      return cb(new Error('Only PDF files are allowed'));
-    }
-    cb(null, true);
-  }
-});
-
 const upload = multer({
   storage: fileStorage,
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    const allowedTypes = ['application/pdf'];
-    if (!allowedTypes.includes(file.mimetype)) {
+    if (file.mimetype !== 'application/pdf') {
       return cb(new Error('Only PDF files are allowed'));
     }
     cb(null, true);
-  }
+  },
 });
+
+const uploadCV = multer({
+  storage: cvStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype !== 'application/pdf') {
+      return cb(new Error('Only PDF files are allowed'));
+    }
+    cb(null, true);
+  },
+});
+
+// ── Admin auth ────────────────────────────────────────────────────────────────
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const adminTokens = new Set();
@@ -116,184 +124,146 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
-// Configure nodemailer transporter
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
+const escapeHtml = (str) =>
+  String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 
-// const transporter = nodemailer.createTransport({
-//   host: 'smtp.gmail.com',
-//   port: 465,
-//   secure: true,
-//   auth: {
-//     user: EMAIL_USER,
-//     pass: EMAIL_PASS
-//   }
-// });
+// ── Routes ─────────────────────────────────────────────────────────────────────
 
-// Configure nodemailer transporter
-const transporter = nodemailer.createTransport({
-  host: "smtp-relay.brevo.com",
-  port: 465,
-  secure: true,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
+// Admin login
+app.post('/api/admin/login', (req, res) => {
+  const { password } = req.body;
+  if (!password || password !== ADMIN_PASSWORD) {
+    return res.status(401).json({ success: false, message: 'Invalid admin password' });
+  }
+  const token = crypto.randomBytes(24).toString('hex');
+  adminTokens.add(token);
+  res.json({ success: true, token });
 });
 
-async function startServer() {
-  try {
-    await mongoose.connect(MONGODB_URI);
-    console.log('✓ MongoDB connected');
+// ── Contact ───────────────────────────────────────────────────────────────────
 
-    // Start server with fallback port handling
-    const server = app.listen(PORT, () => {
-      console.log(`✓ Server running on port ${PORT}`);
-      console.log(`✓ API Base URL: http://localhost:${PORT}`);
-      console.log(`✓ Chat endpoint: http://localhost:${PORT}/api/chat`);
-      if (MOCK_AI_CHAT) {
-        console.log('✓ Mock AI Chat enabled (MOCK_AI_CHAT=true)');
-      }
-    });
-
-    // Handle port conflicts
-    server.on('error', (error) => {
-      if (error.code === 'EADDRINUSE') {
-        const nextPort = parseInt(PORT) + 1;
-        console.warn(`⚠ Port ${PORT} is already in use. Trying port ${nextPort}...`);
-        
-        const retryServer = app.listen(nextPort, () => {
-          console.log(`✓ Server running on fallback port ${nextPort}`);
-          console.log(`✓ Update your frontend API_BASE_URL to http://localhost:${nextPort}`);
-        });
-
-        retryServer.on('error', (retryError) => {
-          console.error(`✗ Could not start server on port ${nextPort} either.`);
-          console.error(`✗ Please kill the process using port ${PORT}:`);
-          console.error(`  Windows: netstat -ano | findstr :${PORT} && taskkill /PID <PID> /F`);
-          console.error(`  Mac/Linux: lsof -i :${PORT} | awk 'NR!=1 {print $2}' | xargs kill -9`);
-          process.exit(1);
-        });
-      } else {
-        console.error('✗ Server error:', error);
-        process.exit(1);
-      }
-    });
-
-  } catch (error) {
-    console.error('✗ MongoDB connection error:', error.message);
-    console.error('✗ Make sure MongoDB is running and MONGODB_URI is correct');
-    process.exit(1);
-  }
-}
-
-
-// Contact route
 app.post('/api/contact', async (req, res) => {
   try {
     const { name, email, message } = req.body;
 
-    // Validate required fields
     if (!name || !email || !message) {
       return res.status(400).json({
         success: false,
-        message: 'All fields (name, email, message) are required'
+        message: 'All fields (name, email, message) are required',
       });
     }
 
-    // Send email
-    const mailOptions = {
-      // from: EMAIL_USER,
-      // to: EMAIL_USER,
-      from: process.env.SMTP_USER,
-      to: 'bharathsgujjar635@gmail.com',
-      subject: 'Portfolio Contact',
-      html: `
-        <h2>New Contact Message</h2>
-        <p><strong>Name:</strong> ${name}</p>
-        <p><strong>Email:</strong> ${email}</p>
-        <p><strong>Message:</strong></p>
-        <p>${message.replace(/\n/g, '<br>')}</p>
-      `
-    };
+    const receiverEmail =
+      process.env.CONTACT_RECEIVER_EMAIL || process.env.SENDER_EMAIL;
 
-    await transporter.sendMail(mailOptions);
+    // Send via Brevo REST API (port 443 — not blocked on Render free tier)
+    await axios.post(
+      'https://api.brevo.com/v3/smtp/email',
+      {
+        sender: {
+          name: 'Bharath Portfolio',
+          email: process.env.SENDER_EMAIL,
+        },
+        to: [{ email: receiverEmail }],
+        replyTo: { email: escapeHtml(email), name: escapeHtml(name) },
+        subject: `Portfolio Contact: New message from ${escapeHtml(name)}`,
+        htmlContent: `
+          <h2>New Contact Form Submission</h2>
+          <p><strong>Name:</strong> ${escapeHtml(name)}</p>
+          <p><strong>Email:</strong> ${escapeHtml(email)}</p>
+          <p><strong>Message:</strong></p>
+          <p>${escapeHtml(message).replace(/\n/g, '<br>')}</p>
+        `,
+      },
+      {
+        headers: {
+          accept: 'application/json',
+          'api-key': process.env.BREVO_API_KEY,
+          'content-type': 'application/json',
+        },
+      }
+    );
+
+    // Persist to MongoDB
     await ContactMessage.create({ name, email, message });
 
-    res.json({ success: true });
+    res.status(200).json({ success: true, message: 'Message sent successfully' });
   } catch (error) {
-    console.error('Error sending email:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to send message. Please try again.'
-    });
+    console.error('Contact error:', error.response?.data || error.message);
+    res.status(500).json({ success: false, message: 'Failed to send message' });
   }
 });
 
-// Certificates routes
+// ── Certificates ──────────────────────────────────────────────────────────────
+
 app.get('/api/certificates', async (req, res) => {
   try {
     const certificates = await Certificate.find().sort({ date: -1 });
     res.json(certificates);
   } catch (error) {
     console.error('Error fetching certificates:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch certificates'
-    });
+    res.status(500).json({ success: false, message: 'Failed to fetch certificates' });
   }
 });
 
-app.post('/api/certificates/upload', requireAdmin, upload.single('certificate'), async (req, res) => {
-  try {
-    const { title, event, college, location, description } = req.body;
+app.post(
+  '/api/certificates/upload',
+  requireAdmin,
+  upload.single('certificate'),
+  async (req, res) => {
+    try {
+      const { title, event, college, location, description } = req.body;
 
-    if (!title || !event || !college || !location || !description) {
-      return res.status(400).json({
-        success: false,
-        message: 'Required fields: title, event, college, location, description'
+      if (!title || !event || !college || !location || !description) {
+        return res.status(400).json({
+          success: false,
+          message: 'Required fields: title, event, college, location, description',
+        });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ success: false, message: 'Certificate PDF file is required' });
+      }
+
+      const fileUrl = `/uploads/certificates/${req.file.filename}`;
+      const newCertificate = await Certificate.create({
+        title,
+        event,
+        college,
+        location,
+        description,
+        fileUrl,
+        date: new Date().toISOString().split('T')[0],
       });
+
+      res.status(201).json({ success: true, certificate: newCertificate });
+    } catch (error) {
+      console.error('Error uploading certificate:', error);
+      res.status(500).json({ success: false, message: 'Failed to upload certificate' });
     }
-
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: 'Certificate PDF file is required'
-      });
-    }
-
-    const fileUrl = `/uploads/certificates/${req.file.filename}`;
-    const newCertificate = await Certificate.create({
-      title,
-      event,
-      college,
-      location,
-      description,
-      fileUrl,
-      date: new Date().toISOString().split('T')[0]
-    });
-
-    res.status(201).json({ success: true, certificate: newCertificate });
-  } catch (error) {
-    console.error('Error uploading certificate:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to upload certificate'
-    });
   }
-});
+);
 
-app.post('/api/admin/upload-cv', requireAdmin, uploadCV.single('cv'), async (req, res) => {
+app.patch('/api/certificates/:id', requireAdmin, async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ success: false, message: 'CV PDF file is required' });
+    const { id } = req.params;
+    const { title, event, college, location, description, fileUrl, date } = req.body;
+    const updates = { title, event, college, location, description, fileUrl, date };
+
+    const updated = await Certificate.findByIdAndUpdate(id, updates, { new: true });
+    if (!updated) {
+      return res.status(404).json({ success: false, message: 'Certificate not found' });
     }
-    res.status(201).json({ success: true, fileUrl: '/cv.pdf' });
+    res.json({ success: true, certificate: updated });
   } catch (error) {
-    console.error('Error uploading CV:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to upload CV'
-    });
+    console.error('Error updating certificate:', error);
+    res.status(500).json({ success: false, message: 'Failed to update certificate' });
   }
 });
 
@@ -304,12 +274,12 @@ app.delete('/api/certificates/:id', requireAdmin, async (req, res) => {
     if (!certificate) {
       return res.status(404).json({ success: false, message: 'Certificate not found' });
     }
+
     if (certificate.fileUrl && certificate.fileUrl.startsWith('/uploads/certificates/')) {
       const filePath = path.join(__dirname, certificate.fileUrl.replace(/^\//, ''));
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     }
+
     await Certificate.findByIdAndDelete(id);
     res.json({ success: true });
   } catch (error) {
@@ -318,7 +288,8 @@ app.delete('/api/certificates/:id', requireAdmin, async (req, res) => {
   }
 });
 
-// Projects routes
+// ── Projects ──────────────────────────────────────────────────────────────────
+
 app.get('/api/projects', async (req, res) => {
   try {
     const projects = await Project.find().sort({ createdAt: -1 });
@@ -332,21 +303,54 @@ app.get('/api/projects', async (req, res) => {
 app.post('/api/projects', requireAdmin, async (req, res) => {
   try {
     const { title, role, description, link, highlights, gradient } = req.body;
+
     if (!title || !role || !description) {
-      return res.status(400).json({ success: false, message: 'Required fields: title, role, description' });
+      return res.status(400).json({
+        success: false,
+        message: 'Required fields: title, role, description',
+      });
     }
+
     const project = await Project.create({
       title,
       role,
       description,
       link: link || '',
       highlights: Array.isArray(highlights) ? highlights : [],
-      gradient: gradient || 'from-neon-purple/20 to-neon-blue/5'
+      gradient: gradient || 'from-neon-purple/20 to-neon-blue/5',
     });
+
     res.status(201).json({ success: true, project });
   } catch (error) {
     console.error('Error creating project:', error);
     res.status(500).json({ success: false, message: 'Failed to create project' });
+  }
+});
+
+app.patch('/api/projects/:id', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, role, description, link, highlights, gradient } = req.body;
+
+    const normalizedHighlights = Array.isArray(highlights)
+      ? highlights
+      : typeof highlights === 'string'
+      ? highlights.split(',').map((item) => item.trim()).filter(Boolean)
+      : highlights;
+
+    const updated = await Project.findByIdAndUpdate(
+      id,
+      { title, role, description, link, highlights: normalizedHighlights, gradient },
+      { new: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({ success: false, message: 'Project not found' });
+    }
+    res.json({ success: true, project: updated });
+  } catch (error) {
+    console.error('Error updating project:', error);
+    res.status(500).json({ success: false, message: 'Failed to update project' });
   }
 });
 
@@ -364,63 +368,21 @@ app.delete('/api/projects/:id', requireAdmin, async (req, res) => {
   }
 });
 
-// Admin login route
-app.post('/api/admin/login', (req, res) => {
-  const { password } = req.body;
-  if (!password || password !== ADMIN_PASSWORD) {
-    return res.status(401).json({ success: false, message: 'Invalid admin password' });
-  }
-  const token = crypto.randomBytes(24).toString('hex');
-  adminTokens.add(token);
-  res.json({ success: true, token });
-});
+// ── CV upload ─────────────────────────────────────────────────────────────────
 
-app.patch('/api/certificates/:id', requireAdmin, async (req, res) => {
+app.post('/api/admin/upload-cv', requireAdmin, uploadCV.single('cv'), async (req, res) => {
   try {
-    const { id } = req.params;
-    const updates = (({ title, event, college, location, description, fileUrl, date }) => ({
-      title,
-      event,
-      college,
-      location,
-      description,
-      fileUrl,
-      date,
-    }))(req.body);
-
-    const updated = await Certificate.findByIdAndUpdate(id, updates, { new: true });
-    if (!updated) {
-      return res.status(404).json({ success: false, message: 'Certificate not found' });
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'CV PDF file is required' });
     }
-    res.json({ success: true, certificate: updated });
+    res.status(201).json({ success: true, fileUrl: '/cv.pdf' });
   } catch (error) {
-    console.error('Error updating certificate:', error);
-    res.status(500).json({ success: false, message: 'Failed to update certificate' });
+    console.error('Error uploading CV:', error);
+    res.status(500).json({ success: false, message: 'Failed to upload CV' });
   }
 });
 
-app.patch('/api/projects/:id', requireAdmin, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const updates = (({ title, role, description, link, highlights, gradient }) => ({
-      title,
-      role,
-      description,
-      link,
-      highlights: Array.isArray(highlights) ? highlights : typeof highlights === 'string' ? highlights.split(',').map((item) => item.trim()).filter(Boolean) : highlights,
-      gradient,
-    }))(req.body);
-
-    const updated = await Project.findByIdAndUpdate(id, updates, { new: true });
-    if (!updated) {
-      return res.status(404).json({ success: false, message: 'Project not found' });
-    }
-    res.json({ success: true, project: updated });
-  } catch (error) {
-    console.error('Error updating project:', error);
-    res.status(500).json({ success: false, message: 'Failed to update project' });
-  }
-});
+// ── Seed ──────────────────────────────────────────────────────────────────────
 
 app.post('/api/admin/seed', requireAdmin, async (req, res) => {
   try {
@@ -428,7 +390,8 @@ app.post('/api/admin/seed', requireAdmin, async (req, res) => {
       {
         title: 'Smart Farming AI Advisory System',
         role: 'Lead Developer',
-        description: 'Offline AI pipeline using RandomForestClassifier that predicts crop risks and gives recommendations.',
+        description:
+          'Offline AI pipeline using RandomForestClassifier that predicts crop risks and gives recommendations.',
         link: 'https://crop-ai-advisor.vercel.app/',
         highlights: ['Reproducibility', 'Robust data handling', 'Offline-first'],
         gradient: 'from-neon-purple/20 to-neon-blue/5',
@@ -436,7 +399,8 @@ app.post('/api/admin/seed', requireAdmin, async (req, res) => {
       {
         title: 'EcoFinds - Fullstack Marketplace',
         role: 'Fullstack Developer',
-        description: 'Sustainable e-commerce platform built with Node js, Express js, React and Tailwind CSS, featuring real-time inventory and secure payments.',
+        description:
+          'Sustainable e-commerce platform built with Node.js, Express.js, React and Tailwind CSS, featuring real-time inventory and secure payments.',
         link: 'https://eco-finds-beta.vercel.app/',
         highlights: ['Fullstack', 'Sustainability', 'Marketing'],
         gradient: 'from-neon-violet/20 to-neon-magenta/5',
@@ -444,7 +408,8 @@ app.post('/api/admin/seed', requireAdmin, async (req, res) => {
       {
         title: 'Project Drishti: AI Crowd Detection',
         role: 'Computer Vision Developer',
-        description: 'Real-time crowd detection using YOLOv8 + OpenCV, optimized for speed and varying conditions.',
+        description:
+          'Real-time crowd detection using YOLOv8 + OpenCV, optimized for speed and varying conditions.',
         highlights: ['Real-time', 'YOLOv8', 'Optimized performance'],
         gradient: 'from-accent/20 to-neon-cyan/5',
       },
@@ -456,7 +421,8 @@ app.post('/api/admin/seed', requireAdmin, async (req, res) => {
         event: 'Idea Presentation Contest',
         college: 'SDM Institute of Technology (SDMIT)',
         location: 'Ujire',
-        description: 'Certificate of Appreciation for participating in the Mini-Anveshana 2024 idea presentation contest.',
+        description:
+          'Certificate of Appreciation for participating in the Mini-Anveshana 2024 idea presentation contest.',
         fileUrl: '/certificates/mini-anveshana-2024.pdf',
         date: '18 October 2024',
       },
@@ -470,51 +436,50 @@ app.post('/api/admin/seed', requireAdmin, async (req, res) => {
         date: '15-16 February 2025',
       },
       {
-        title: 'Nexovate’25',
+        title: "Nexovate'25",
         event: 'National Level Hackathon',
         college: 'Presidency University Bengaluru',
         location: 'Bengaluru',
-        description: 'Certificate of participation for Nexovate’25 national level hackathon organized by Harvest Club.',
+        description:
+          "Certificate of participation for Nexovate'25 national level hackathon organized by Harvest Club.",
         fileUrl: '/certificates/nexovate-25-2025.pdf',
         date: '29-30 August 2025',
       },
     ];
 
-    await Promise.all(sampleProjects.map((project) =>
-      Project.findOneAndUpdate(
-        { title: project.title },
-        { $set: project },
-        { upsert: true, new: true }
+    await Promise.all(
+      sampleProjects.map((project) =>
+        Project.findOneAndUpdate({ title: project.title }, { $set: project }, { upsert: true, new: true })
       )
-    ));
+    );
 
-    await Promise.all(sampleCertificates.map((certificate) =>
-      Certificate.findOneAndUpdate(
-        { title: certificate.title },
-        { $set: certificate },
-        { upsert: true, new: true }
+    await Promise.all(
+      sampleCertificates.map((certificate) =>
+        Certificate.findOneAndUpdate(
+          { title: certificate.title },
+          { $set: certificate },
+          { upsert: true, new: true }
+        )
       )
-    ));
+    );
 
     const certificates = await Certificate.find().sort({ date: -1 });
     const projects = await Project.find().sort({ createdAt: -1 });
     res.json({ success: true, certificates, projects });
   } catch (error) {
-    console.error('Error seeding admin data:', error);
+    console.error('Error seeding data:', error);
     res.status(500).json({ success: false, message: 'Failed to seed data' });
   }
 });
 
-// AI Chat route - Groq chat integration
+// ── AI Chat ───────────────────────────────────────────────────────────────────
+
 app.post('/api/chat', async (req, res) => {
   try {
     const { message, history, sessionId } = req.body;
 
     if (!message || typeof message !== 'string' || !message.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Message is required'
-      });
+      return res.status(400).json({ success: false, message: 'Message is required' });
     }
 
     const chatSessionId = sessionId || `session_${Date.now()}`;
@@ -563,46 +528,6 @@ RESPONSE FORMATTING RULES
 • Short sentences (not rambling)
 • Direct and to-the-point
 
-📋 RESPONSE TEMPLATES:
-
-FOR "WHAT SKILLS DOES HE HAVE?":
-✨ **Bharath's Tech Toolkit**
-• **Backend**: Spring Boot (Java), Node.js, Express.js
-• **Frontend**: React with modern design
-• **AI/ML**: YOLOv8 for computer vision, Scikit-Learn for classic ML
-• **Databases**: MongoDB (NoSQL), PostgreSQL (relational)
-• **Core**: Strong DSA, system design, ML integration
-
-Want details on any specific area?
-
-FOR "WHAT PROJECTS HAS HE BUILT?":
-🚀 **4 Main Projects**
-• **Smart Farming AI** — ML-powered crop risk prediction
-• **EcoFinds** — Full-stack sustainable marketplace
-• **Project Drishti** — Real-time crowd detection with YOLOv8
-• **Anemia Detection App** — Offline mobile health screening
-
-Ask about any project for more details!
-
-FOR SPECIFIC PROJECT (e.g., "Tell me about EcoFinds"):
-💼 **EcoFinds — Sustainable E-Commerce Marketplace**
-What it does:
-• Full-stack platform for buying/selling eco-friendly products
-• Real-time inventory management
-• Secure payment integration
-
-Tech used:
-• Frontend: React with Tailwind CSS
-• Backend: Node.js + Express.js
-• Database: MongoDB + PostgreSQL
-• Focus: Sustainability, user experience, scalability
-
-Curious about the tech stack or design decisions?
-
-FOR CONTACT QUESTION:
-📧 **Getting in Touch**
-Use the **contact form** on his portfolio website — quickest way to reach him! You can also find his LinkedIn profile there.
-
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 GOLDEN RULES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -624,44 +549,42 @@ GOLDEN RULES
     const messages = [
       { role: 'system', content: systemPrompt },
       ...historyMessages,
-      { role: 'user', content: message.trim() }
+      { role: 'user', content: message.trim() },
     ];
 
     let reply = '';
+
     const mockResponses = [
-      "I'm Bharath, a passionate full-stack developer specializing in React, Node.js, TypeScript, and MongoDB.",
-      "My projects include modern portfolio websites, full-stack apps, and backend services built with Express and MongoDB.",
-      "Bharath has strong skills in frontend design, responsive UIs, and backend API development.",
-      "You can contact Bharath through his email or LinkedIn profile listed on the portfolio site.",
-      "He primarily uses React, Node.js, Tailwind CSS, MongoDB, and Express for web application development."
+      "I'm Bharath's AI assistant! He's a passionate full-stack developer specializing in React, Node.js, and MongoDB.",
+      'His projects include Smart Farming AI, EcoFinds marketplace, Project Drishti crowd detection, and more.',
+      'Bharath has strong skills in backend development, computer vision, and machine learning.',
+      'You can contact Bharath through the contact form on his portfolio site.',
+      'He primarily uses Spring Boot, Node.js, React, MongoDB, and YOLOv8 in his projects.',
     ];
 
     if (MOCK_AI_CHAT || !GROQ_API_KEY) {
-      console.log('❌ MOCK MODE: Set MOCK_AI_CHAT=false and verify GROQ_API_KEY in .env');
+      console.log('⚠ MOCK MODE active. Set MOCK_AI_CHAT=false and add GROQ_API_KEY to use real AI.');
       reply = mockResponses[Math.floor(Math.random() * mockResponses.length)];
     } else {
       try {
         console.log('🔄 Calling Groq API for:', message.substring(0, 50));
+
         const completion = await groq.chat.completions.create({
-          model: 'openai/gpt-oss-20b',
+          model: 'llama3-70b-8192',   // ← fixed: was 'openai/gpt-oss-20b' (invalid)
           messages,
           max_tokens: 500,
-          temperature: 0.8
+          temperature: 0.8,
         });
 
         reply = completion.choices?.[0]?.message?.content?.trim() || '';
-        console.log('✅ Groq Success:', reply.substring(0, 60));
-        
-        if (!reply) {
-          throw new Error('Empty response from Groq');
-        }
+        console.log('✅ Groq success:', reply.substring(0, 60));
+
+        if (!reply) throw new Error('Empty response from Groq');
       } catch (groqError) {
-        const errorMsg = groqError?.message || 'Unknown error';
-        console.error('❌ Groq failed:', errorMsg);
-        
+        console.error('❌ Groq failed:', groqError?.message);
         return res.status(500).json({
           success: false,
-          message: `AI Error: ${errorMsg}`
+          message: `AI Error: ${groqError?.message || 'Unknown error'}`,
         });
       }
     }
@@ -674,10 +597,10 @@ GOLDEN RULES
           messages: {
             $each: [
               { role: 'user', content: message.trim() },
-              { role: 'assistant', content: reply }
-            ]
-          }
-        }
+              { role: 'assistant', content: reply },
+            ],
+          },
+        },
       },
       { upsert: true, new: true }
     );
@@ -685,42 +608,69 @@ GOLDEN RULES
     res.json({ success: true, reply, sessionId: chatSession.sessionId });
   } catch (error) {
     console.error('Error in chat endpoint:', error?.message || error);
-    res.status(500).json({
-      success: false,
-      message: error?.message || 'Failed to process chat message'
-    });
+    res.status(500).json({ success: false, message: error?.message || 'Failed to process chat message' });
   }
 });
 
-// Chat session retrieval route
+// Chat session retrieval
 app.get('/api/chat/:sessionId', async (req, res) => {
   try {
     const { sessionId } = req.params;
 
     if (!sessionId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Session ID is required'
-      });
+      return res.status(400).json({ success: false, message: 'Session ID is required' });
     }
 
     const chatSession = await ChatSession.findOne({ sessionId });
 
     if (!chatSession) {
-      return res.status(404).json({
-        success: false,
-        message: 'Chat session not found'
-      });
+      return res.status(404).json({ success: false, message: 'Chat session not found' });
     }
 
     res.json({ success: true, session: chatSession });
   } catch (error) {
     console.error('Error fetching chat session:', error?.message || error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch chat session'
-    });
+    res.status(500).json({ success: false, message: 'Failed to fetch chat session' });
   }
 });
+
+// ── Start server ──────────────────────────────────────────────────────────────
+
+async function startServer() {
+  try {
+    await mongoose.connect(MONGODB_URI);
+    console.log('✓ MongoDB connected');
+
+    const server = app.listen(PORT, () => {
+      console.log(`✓ Server running on port ${PORT}`);
+      console.log(`✓ API Base URL: http://localhost:${PORT}`);
+      console.log(`✓ Chat endpoint: http://localhost:${PORT}/api/chat`);
+      if (MOCK_AI_CHAT) console.log('⚠ Mock AI Chat enabled (MOCK_AI_CHAT=true)');
+    });
+
+    server.on('error', (error) => {
+      if (error.code === 'EADDRINUSE') {
+        const nextPort = parseInt(PORT) + 1;
+        console.warn(`⚠ Port ${PORT} in use. Trying port ${nextPort}...`);
+
+        const retryServer = app.listen(nextPort, () => {
+          console.log(`✓ Server running on fallback port ${nextPort}`);
+          console.log(`✓ Update your frontend API_BASE_URL to http://localhost:${nextPort}`);
+        });
+
+        retryServer.on('error', () => {
+          console.error(`✗ Could not start on port ${nextPort} either. Kill the process on port ${PORT}.`);
+          process.exit(1);
+        });
+      } else {
+        console.error('✗ Server error:', error);
+        process.exit(1);
+      }
+    });
+  } catch (error) {
+    console.error('✗ MongoDB connection error:', error.message);
+    process.exit(1);
+  }
+}
 
 startServer();
