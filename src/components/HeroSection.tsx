@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import profileImg from "@/assets/profile.jpg";
 
@@ -67,16 +68,18 @@ const HeroSection = () => {
             </motion.p>
 
             <motion.div
-              className="flex gap-4 pt-4"
+              className="flex flex-wrap gap-4 pt-4"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.9 }}
             >
               <a
-                href="#projects"
+                href="/cv.pdf"
+                target="_blank"
+                rel="noreferrer"
                 className="px-7 py-3.5 rounded-xl bg-primary text-primary-foreground font-semibold magnetic-btn relative overflow-hidden group"
               >
-                <span className="relative z-10">View Projects</span>
+                <span className="relative z-10">View CV</span>
                 <div className="absolute inset-0 bg-gradient-to-r from-neon-purple to-neon-blue opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
               </a>
               <a

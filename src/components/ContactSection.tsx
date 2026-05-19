@@ -2,6 +2,7 @@ import React, { useState, useRef } from "react";
 import { Mail, Phone, Github, Linkedin } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { sendContactMessage } from "@/lib/api";
+import { getErrorMessage } from "@/lib/utils";
 import ScrollReveal from "./ScrollReveal";
 import { motion } from "framer-motion";
 
@@ -69,8 +70,8 @@ const ContactSection = () => {
       await sendContactMessage(formData);
       toast({ title: "Message sent successfully! 🎉" });
       setFormData({ name: "", email: "", message: "" });
-    } catch (err: any) {
-      toast({ title: err.message || "Failed to send message. Please try again.", variant: "destructive" });
+    } catch (err: unknown) {
+      toast({ title: getErrorMessage(err) || "Failed to send message. Please try again.", variant: "destructive" });
     } finally {
       setSending(false);
     }

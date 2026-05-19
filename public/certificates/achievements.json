@@ -1,0 +1,29 @@
+[
+  {
+    "title": "Mini-Anveshana 2024",
+    "event": "Idea Presentation Contest",
+    "college": "SDM Institute of Technology (SDMIT)",
+    "location": "Ujire",
+    "date": "18 October 2024",
+    "description": "Certificate of Appreciation for participating in the Mini-Anveshana 2024 idea presentation contest.",
+    "fileName": "mini-anveshana-2024.pdf"
+  },
+  {
+    "title": "INFOTHON 4.0",
+    "event": "National Level Hackathon",
+    "college": "Vidyavardhaka College of Engineering",
+    "location": "Mysore",
+    "date": "15-16 February 2025",
+    "description": "Certificate of participation for the 24-hour INFOTHON 4.0 hackathon event.",
+    "fileName": "infothon-4-0-2025.pdf"
+  },
+  {
+    "title": "Nexovate’25",
+    "event": "National Level Hackathon",
+    "college": "Presidency University Bengaluru",
+    "location": "Bengaluru",
+    "date": "29-30 August 2025",
+    "description": "Certificate of participation for Nexovate’25 national level hackathon organized by Harvest Club.",
+    "fileName": "nexovate-25-2025.pdf"
+  }
+]

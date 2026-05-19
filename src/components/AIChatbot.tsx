@@ -1,18 +1,43 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MessageCircle, X, Send, Bot, User, Loader2 } from "lucide-react";
-import { sendChatMessage, type ChatMessage } from "@/lib/api";
+import { fetchChatSession, sendChatMessage, type ChatMessage } from "@/lib/api";
+
+const initialMessages: ChatMessage[] = [
+  { role: "assistant", content: "Hi! I'm Bharath's AI assistant. Ask me anything about his skills, projects, or experience! 🚀" },
+];
 
 const AIChatbot = () => {
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: "assistant", content: "Hi! I'm Bharath's AI assistant. Ask me anything about his skills, projects, or experience! 🚀" },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | undefined>();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const resetConversation = () => {
+    localStorage.removeItem("portfolio_chat_session_id");
+    setSessionId(undefined);
+    setMessages(initialMessages);
+    setInput("");
+  };
+
+  useEffect(() => {
+    const storedSessionId = localStorage.getItem("portfolio_chat_session_id");
+    if (!storedSessionId) return;
+
+    fetchChatSession(storedSessionId)
+      .then((session) => {
+        if (session?.messages?.length) {
+          setMessages(session.messages);
+          setSessionId(session.sessionId);
+        }
+      })
+      .catch(() => {
+        localStorage.removeItem("portfolio_chat_session_id");
+      });
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -34,6 +59,7 @@ const AIChatbot = () => {
     try {
       const response = await sendChatMessage(text, [...messages, userMsg], sessionId);
       setSessionId(response.sessionId);
+      localStorage.setItem("portfolio_chat_session_id", response.sessionId);
       setMessages((prev) => [...prev, { role: "assistant", content: response.reply }]);
     } catch {
       setMessages((prev) => [
@@ -85,9 +111,18 @@ const AIChatbot = () => {
                 <p className="text-sm font-semibold text-foreground">AI Assistant</p>
                 <p className="text-xs text-muted-foreground">Ask about Bharath</p>
               </div>
-              <div className="ml-auto flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-                <span className="text-xs text-muted-foreground">Online</span>
+              <div className="ml-auto flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={resetConversation}
+                  className="rounded-full border border-border/60 px-3 py-1 text-[11px] text-muted-foreground hover:bg-primary/10 transition"
+                >
+                  New Conversation
+                </button>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
+                  <span className="text-xs text-muted-foreground">Online</span>
+                </div>
               </div>
             </div>
 

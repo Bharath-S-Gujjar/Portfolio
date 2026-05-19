@@ -1,8 +1,11 @@
 const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
 const express = require('express');
 const nodemailer = require('nodemailer');
 const cors = require('cors');
 const mongoose = require('mongoose');
+const multer = require('multer');
 const Groq = require('groq-sdk');
 
 require('dotenv').config({ path: path.join(__dirname, '.env') });
@@ -31,6 +34,7 @@ if (!GROQ_API_KEY) {
 
 const ContactMessage = require('./models/ContactMessage');
 const Certificate = require('./models/Certificate');
+const Project = require('./models/Project');
 const ChatSession = require('./models/ChatSession');
 
 // Initialize Groq client
@@ -41,6 +45,62 @@ const groq = new Groq({
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+const uploadBaseDir = path.join(__dirname, 'uploads');
+const uploadCertificatesDir = path.join(uploadBaseDir, 'certificates');
+const cvDir = path.join(__dirname, '..', 'public');
+fs.mkdirSync(uploadCertificatesDir, { recursive: true });
+fs.mkdirSync(cvDir, { recursive: true });
+app.use('/uploads', express.static(uploadBaseDir));
+
+const fileStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadCertificatesDir),
+  filename: (req, file, cb) => {
+    const safeName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+    cb(null, `${Date.now()}-${safeName}`);
+  }
+});
+
+const cvStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, cvDir),
+  filename: (req, file, cb) => cb(null, 'cv.pdf'),
+});
+
+const uploadCV = multer({
+  storage: cvStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['application/pdf'];
+    if (!allowedTypes.includes(file.mimetype)) {
+      return cb(new Error('Only PDF files are allowed'));
+    }
+    cb(null, true);
+  }
+});
+
+const upload = multer({
+  storage: fileStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['application/pdf'];
+    if (!allowedTypes.includes(file.mimetype)) {
+      return cb(new Error('Only PDF files are allowed'));
+    }
+    cb(null, true);
+  }
+});
+
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
+const adminTokens = new Set();
+
+const requireAdmin = (req, res, next) => {
+  const auth = req.headers.authorization || '';
+  const token = auth.replace('Bearer ', '').trim();
+  if (!token || !adminTokens.has(token)) {
+    return res.status(401).json({ success: false, message: 'Unauthorized' });
+  }
+  next();
+};
 
 // Configure nodemailer transporter
 const transporter = nodemailer.createTransport({
@@ -162,9 +222,9 @@ app.get('/api/certificates', async (req, res) => {
   }
 });
 
-app.post('/api/certificates', async (req, res) => {
+app.post('/api/certificates/upload', requireAdmin, upload.single('certificate'), async (req, res) => {
   try {
-    const { title, event, college, location, description, fileUrl } = req.body;
+    const { title, event, college, location, description } = req.body;
 
     if (!title || !event || !college || !location || !description) {
       return res.status(400).json({
@@ -173,27 +233,258 @@ app.post('/api/certificates', async (req, res) => {
       });
     }
 
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Certificate PDF file is required'
+      });
+    }
+
+    const fileUrl = `/uploads/certificates/${req.file.filename}`;
     const newCertificate = await Certificate.create({
       title,
       event,
       college,
       location,
       description,
-      fileUrl: fileUrl || '',
+      fileUrl,
       date: new Date().toISOString().split('T')[0]
     });
 
     res.status(201).json({ success: true, certificate: newCertificate });
   } catch (error) {
-    console.error('Error creating certificate:', error);
+    console.error('Error uploading certificate:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to create certificate'
+      message: 'Failed to upload certificate'
     });
   }
 });
 
-// AI Chat route - Real OpenAI Integration
+app.post('/api/admin/upload-cv', requireAdmin, uploadCV.single('cv'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'CV PDF file is required' });
+    }
+    res.status(201).json({ success: true, fileUrl: '/cv.pdf' });
+  } catch (error) {
+    console.error('Error uploading CV:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to upload CV'
+    });
+  }
+});
+
+app.delete('/api/certificates/:id', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const certificate = await Certificate.findById(id);
+    if (!certificate) {
+      return res.status(404).json({ success: false, message: 'Certificate not found' });
+    }
+    if (certificate.fileUrl && certificate.fileUrl.startsWith('/uploads/certificates/')) {
+      const filePath = path.join(__dirname, certificate.fileUrl.replace(/^\//, ''));
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    }
+    await Certificate.findByIdAndDelete(id);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting certificate:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete certificate' });
+  }
+});
+
+// Projects routes
+app.get('/api/projects', async (req, res) => {
+  try {
+    const projects = await Project.find().sort({ createdAt: -1 });
+    res.json(projects);
+  } catch (error) {
+    console.error('Error fetching projects:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch projects' });
+  }
+});
+
+app.post('/api/projects', requireAdmin, async (req, res) => {
+  try {
+    const { title, role, description, link, highlights, gradient } = req.body;
+    if (!title || !role || !description) {
+      return res.status(400).json({ success: false, message: 'Required fields: title, role, description' });
+    }
+    const project = await Project.create({
+      title,
+      role,
+      description,
+      link: link || '',
+      highlights: Array.isArray(highlights) ? highlights : [],
+      gradient: gradient || 'from-neon-purple/20 to-neon-blue/5'
+    });
+    res.status(201).json({ success: true, project });
+  } catch (error) {
+    console.error('Error creating project:', error);
+    res.status(500).json({ success: false, message: 'Failed to create project' });
+  }
+});
+
+app.delete('/api/projects/:id', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const project = await Project.findByIdAndDelete(id);
+    if (!project) {
+      return res.status(404).json({ success: false, message: 'Project not found' });
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting project:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete project' });
+  }
+});
+
+// Admin login route
+app.post('/api/admin/login', (req, res) => {
+  const { password } = req.body;
+  if (!password || password !== ADMIN_PASSWORD) {
+    return res.status(401).json({ success: false, message: 'Invalid admin password' });
+  }
+  const token = crypto.randomBytes(24).toString('hex');
+  adminTokens.add(token);
+  res.json({ success: true, token });
+});
+
+app.patch('/api/certificates/:id', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = (({ title, event, college, location, description, fileUrl, date }) => ({
+      title,
+      event,
+      college,
+      location,
+      description,
+      fileUrl,
+      date,
+    }))(req.body);
+
+    const updated = await Certificate.findByIdAndUpdate(id, updates, { new: true });
+    if (!updated) {
+      return res.status(404).json({ success: false, message: 'Certificate not found' });
+    }
+    res.json({ success: true, certificate: updated });
+  } catch (error) {
+    console.error('Error updating certificate:', error);
+    res.status(500).json({ success: false, message: 'Failed to update certificate' });
+  }
+});
+
+app.patch('/api/projects/:id', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = (({ title, role, description, link, highlights, gradient }) => ({
+      title,
+      role,
+      description,
+      link,
+      highlights: Array.isArray(highlights) ? highlights : typeof highlights === 'string' ? highlights.split(',').map((item) => item.trim()).filter(Boolean) : highlights,
+      gradient,
+    }))(req.body);
+
+    const updated = await Project.findByIdAndUpdate(id, updates, { new: true });
+    if (!updated) {
+      return res.status(404).json({ success: false, message: 'Project not found' });
+    }
+    res.json({ success: true, project: updated });
+  } catch (error) {
+    console.error('Error updating project:', error);
+    res.status(500).json({ success: false, message: 'Failed to update project' });
+  }
+});
+
+app.post('/api/admin/seed', requireAdmin, async (req, res) => {
+  try {
+    const sampleProjects = [
+      {
+        title: 'Smart Farming AI Advisory System',
+        role: 'Lead Developer',
+        description: 'Offline AI pipeline using RandomForestClassifier that predicts crop risks and gives recommendations.',
+        link: 'https://crop-ai-advisor.vercel.app/',
+        highlights: ['Reproducibility', 'Robust data handling', 'Offline-first'],
+        gradient: 'from-neon-purple/20 to-neon-blue/5',
+      },
+      {
+        title: 'EcoFinds - Fullstack Marketplace',
+        role: 'Fullstack Developer',
+        description: 'Sustainable e-commerce platform built with Node js, Express js, React and Tailwind CSS, featuring real-time inventory and secure payments.',
+        link: 'https://eco-finds-beta.vercel.app/',
+        highlights: ['Fullstack', 'Sustainability', 'Marketing'],
+        gradient: 'from-neon-violet/20 to-neon-magenta/5',
+      },
+      {
+        title: 'Project Drishti: AI Crowd Detection',
+        role: 'Computer Vision Developer',
+        description: 'Real-time crowd detection using YOLOv8 + OpenCV, optimized for speed and varying conditions.',
+        highlights: ['Real-time', 'YOLOv8', 'Optimized performance'],
+        gradient: 'from-accent/20 to-neon-cyan/5',
+      },
+    ];
+
+    const sampleCertificates = [
+      {
+        title: 'Mini-Anveshana 2024',
+        event: 'Idea Presentation Contest',
+        college: 'SDM Institute of Technology (SDMIT)',
+        location: 'Ujire',
+        description: 'Certificate of Appreciation for participating in the Mini-Anveshana 2024 idea presentation contest.',
+        fileUrl: '/certificates/mini-anveshana-2024.pdf',
+        date: '18 October 2024',
+      },
+      {
+        title: 'INFOTHON 4.0',
+        event: 'National Level Hackathon',
+        college: 'Vidyavardhaka College of Engineering',
+        location: 'Mysore',
+        description: 'Certificate of participation for the 24-hour INFOTHON 4.0 hackathon event.',
+        fileUrl: '/certificates/infothon-4-0-2025.pdf',
+        date: '15-16 February 2025',
+      },
+      {
+        title: 'Nexovate’25',
+        event: 'National Level Hackathon',
+        college: 'Presidency University Bengaluru',
+        location: 'Bengaluru',
+        description: 'Certificate of participation for Nexovate’25 national level hackathon organized by Harvest Club.',
+        fileUrl: '/certificates/nexovate-25-2025.pdf',
+        date: '29-30 August 2025',
+      },
+    ];
+
+    await Promise.all(sampleProjects.map((project) =>
+      Project.findOneAndUpdate(
+        { title: project.title },
+        { $set: project },
+        { upsert: true, new: true }
+      )
+    ));
+
+    await Promise.all(sampleCertificates.map((certificate) =>
+      Certificate.findOneAndUpdate(
+        { title: certificate.title },
+        { $set: certificate },
+        { upsert: true, new: true }
+      )
+    ));
+
+    const certificates = await Certificate.find().sort({ date: -1 });
+    const projects = await Project.find().sort({ createdAt: -1 });
+    res.json({ success: true, certificates, projects });
+  } catch (error) {
+    console.error('Error seeding admin data:', error);
+    res.status(500).json({ success: false, message: 'Failed to seed data' });
+  }
+});
+
+// AI Chat route - Groq chat integration
 app.post('/api/chat', async (req, res) => {
   try {
     const { message, history, sessionId } = req.body;
@@ -376,6 +667,37 @@ GOLDEN RULES
     res.status(500).json({
       success: false,
       message: error?.message || 'Failed to process chat message'
+    });
+  }
+});
+
+// Chat session retrieval route
+app.get('/api/chat/:sessionId', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+
+    if (!sessionId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Session ID is required'
+      });
+    }
+
+    const chatSession = await ChatSession.findOne({ sessionId });
+
+    if (!chatSession) {
+      return res.status(404).json({
+        success: false,
+        message: 'Chat session not found'
+      });
+    }
+
+    res.json({ success: true, session: chatSession });
+  } catch (error) {
+    console.error('Error fetching chat session:', error?.message || error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch chat session'
     });
   }
 });

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Menu, X } from "lucide-react";
+import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 
 const links = [
@@ -46,6 +47,12 @@ const Navbar = () => {
               <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-primary transition-all duration-300 group-hover:w-full" />
             </a>
           ))}
+          <Link
+            to="/admin"
+            className="text-sm bg-primary/10 text-primary px-4 py-2 rounded-full font-medium hover:bg-primary/20 transition"
+          >
+            Go as Admin
+          </Link>
         </div>
 
         <button onClick={() => setOpen(!open)} className="md:hidden text-foreground">
@@ -72,6 +79,13 @@ const Navbar = () => {
                 {l.label}
               </a>
             ))}
+            <Link
+              to="/admin"
+              onClick={() => setOpen(false)}
+              className="block text-sm bg-primary/10 text-primary px-4 py-2 rounded-full font-medium hover:bg-primary/20 transition"
+            >
+              Go as Admin
+            </Link>
           </motion.div>
         )}
       </AnimatePresence>

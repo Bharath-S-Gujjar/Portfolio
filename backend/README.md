@@ -14,19 +14,21 @@ Express.js backend for the portfolio website with contact form functionality.
    npm install
    ```
 
-3. Create a `.env` file with your Gmail credentials, MongoDB connection string, and OpenAI API key:
+3. Create a `.env` file with your Gmail credentials, MongoDB connection string, and Groq API key:
    ```
    EMAIL_USER=your-email@gmail.com
    EMAIL_PASS=your-app-password
    MONGODB_URI=mongodb://127.0.0.1:27017/portfolio
-   OPENAI_API_KEY=your-openai-api-key
+   GROQ_API_KEY=your-groq-api-key
    PORT=5000
+   MOCK_AI_CHAT=false
    ```
 
    **Important Notes:** 
    - Use Gmail App Password for `EMAIL_PASS`, not your regular password. Generate one at https://myaccount.google.com/apppasswords
-   - Get OpenAI API key from https://platform.openai.com/api-keys
+   - Get a Groq API key from the provider you're using
    - Configure `MONGODB_URI` for your MongoDB database
+   - If `GROQ_API_KEY` is missing or `MOCK_AI_CHAT=true`, the chat endpoint uses mock replies
 
 4. Start the development server:
    ```bash
@@ -88,8 +90,36 @@ Creates a new certificate.
 }
 ```
 
+### POST /api/certificates/upload
+Uploads a certificate PDF file and creates a certificate record.
+
+**Form fields:**
+- `title`
+- `event`
+- `college`
+- `location`
+- `description`
+- `certificate` (PDF file)
+
+**Response:**
+```json
+{
+  "success": true,
+  "certificate": {
+    "_id": "...",
+    "title": "Certificate Title",
+    "event": "Event Name",
+    "college": "College Name",
+    "location": "Location",
+    "description": "Description",
+    "fileUrl": "/uploads/certificates/1690000000000-certificate.pdf",
+    "date": "2026-05-18"
+  }
+}
+```
+
 ### POST /api/chat
-AI chat endpoint with OpenAI integration and conversation history storage.
+AI chat endpoint with Groq integration and conversation history storage.
 
 **Request Body:**
 ```json
@@ -112,8 +142,27 @@ AI chat endpoint with OpenAI integration and conversation history storage.
 }
 ```
 
+### GET /api/chat/:sessionId
+Returns the stored chat session and message history for a given session ID.
+
+**Response:**
+```json
+{
+  "success": true,
+  "session": {
+    "sessionId": "session_1234567890",
+    "messages": [
+      { "role": "user", "content": "Hi" },
+      { "role": "assistant", "content": "Hello!" }
+    ],
+    "createdAt": "2026-05-18T...",
+    "updatedAt": "2026-05-18T..."
+  }
+}
+```
+
 **Features:**
-- Real OpenAI GPT integration
+- Groq-based chat integration with conversation history
 - Conversation history persistence in MongoDB
 - Session tracking for multi-turn conversations
 - Context-aware responses about Bharath's experience and projects
@@ -121,5 +170,5 @@ AI chat endpoint with OpenAI integration and conversation history storage.
 
 ## Features Implemented
 - ✅ Contact API with nodemailer Gmail integration
-- 🔄 Certificates API (coming soon)
-- 🔄 AI Chat API (coming soon)
+- ✅ Certificates API with MongoDB persistence
+- ✅ AI Chat API endpoint with message history and mock fallback support

@@ -1,26 +1,28 @@
 # Portfolio Website - Project Bloom
 
-A modern, responsive portfolio website built with React, TypeScript, Tailwind CSS, and Framer Motion.
+A modern, responsive portfolio website built with React, TypeScript, Tailwind CSS, Framer Motion, and a connected Express backend.
 
-## 🚀 Features
+## 🚀 Current Status
 
-### Frontend (Complete ✅)
-- Modern React + TypeScript setup
-- Beautiful UI with Tailwind CSS and shadcn/ui components
-- Smooth animations with Framer Motion
-- Responsive design
-- Contact form with validation
-- Projects showcase
-- Skills section
-- Achievements section
-- AI Chatbot component
+### Frontend
+- ✅ React + TypeScript with Vite
+- ✅ Tailwind CSS + shadcn/ui components
+- ✅ Responsive portfolio layout
+- ✅ Animated UI with Framer Motion
+- ✅ Contact form with validation
+- ✅ Projects showcase
+- ✅ Skills and achievements sections
+- ✅ Floating AI chatbot component
+- ✅ Backend API integration via `src/lib/api.ts`
 
-### Backend (In Progress 🔄)
-- ✅ Contact API - Send emails via nodemailer
-- ✅ Certificates API - MongoDB backend with CRUD operations
-- ✅ AI Chat API - Real OpenAI GPT integration with conversation history
-- 🔄 File upload for certificate PDFs
-- 🔄 Authentication for admin panel
+### Backend
+- ✅ Express server in `backend/server.js`
+- ✅ Contact API with Gmail SMTP via nodemailer
+- ✅ Certificate API with MongoDB persistence
+- ✅ Certificate PDF upload support via `POST /api/certificates/upload`
+- ✅ AI chat endpoint with Groq SDK integration and message history
+- ✅ MongoDB data storage for contacts, certificates, and chat sessions
+- ✅ Optional mock AI chat mode via `MOCK_AI_CHAT=true`
 
 ## 🛠️ Tech Stack
 
@@ -33,19 +35,33 @@ A modern, responsive portfolio website built with React, TypeScript, Tailwind CS
 - shadcn/ui
 - React Router
 - React Hook Form
+- lucide-react
+- @tanstack/react-query
+- zod
 
 ### Backend
 - Node.js
-- Express.js
-- nodemailer (Gmail SMTP)
-- CORS
+- Express
+- Mongoose
+- nodemailer
 - dotenv
+- cors
+- groq-sdk
+
+## 📁 Project Structure
+
+- `src/` — React application
+- `src/components/AIChatbot.tsx` — floating chatbot UI
+- `src/lib/api.ts` — frontend API client
+- `backend/server.js` — Express backend
+- `backend/models/` — Mongoose models
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Node.js (v16 or higher)
+- Node.js 18+ installed
 - npm or yarn
+- MongoDB accessible locally or remotely
 
 ### Frontend Setup
 1. Install dependencies:
@@ -53,15 +69,17 @@ A modern, responsive portfolio website built with React, TypeScript, Tailwind CS
    npm install
    ```
 
-2. Start development server:
+2. Run the frontend:
    ```bash
    npm run dev
    ```
 
-3. Open [http://localhost:8080](http://localhost:8080)
+3. Open the local URL shown by Vite.
+
+> If you need to use a different backend URL, set `VITE_API_BASE_URL` in your environment or `.env` file.
 
 ### Backend Setup
-1. Navigate to backend directory:
+1. Go to the backend folder:
    ```bash
    cd backend
    ```
@@ -71,30 +89,32 @@ A modern, responsive portfolio website built with React, TypeScript, Tailwind CS
    npm install
    ```
 
-3. Set up environment variables:
-   Create a `.env` file with:
-   ```
+3. Create a `.env` file with the following keys:
+   ```env
    EMAIL_USER=your-email@gmail.com
    EMAIL_PASS=your-app-password
+   MONGODB_URI=mongodb://127.0.0.1:27017/portfolio
+   GROQ_API_KEY=your-groq-api-key
    PORT=5000
+   MOCK_AI_CHAT=false
    ```
 
-   **Note:** Use Gmail App Password for EMAIL_PASS
+   - Use a Gmail App Password for `EMAIL_PASS`.
+   - If `GROQ_API_KEY` is missing or `MOCK_AI_CHAT=true`, the chat endpoint uses mock replies.
 
-4. Start the backend server:
+4. Start the backend:
    ```bash
    npm run dev
    ```
 
-The backend will run on [http://localhost:5000](http://localhost:5000)
+The backend defaults to `http://localhost:5000`.
 
-## 📧 Contact API
+## 🔌 API Endpoints
 
-The contact form sends emails using nodemailer with Gmail SMTP.
+### POST `/api/contact`
+Sends contact form email and stores the message in MongoDB.
 
-**Endpoint:** `POST /api/contact`
-
-**Request Body:**
+Request body:
 ```json
 {
   "name": "John Doe",
@@ -103,24 +123,74 @@ The contact form sends emails using nodemailer with Gmail SMTP.
 }
 ```
 
-**Response:**
+Response:
 ```json
 {
   "success": true
 }
 ```
 
-## 🔄 Next Steps
+### GET `/api/certificates`
+Returns a list of certificates stored in MongoDB.
 
-1. **Certificates API**: Implement CRUD operations for certificates backed by MongoDB
-2. **AI Chat API**: Integrate with OpenAI or similar for portfolio Q&A
-3. **Database**: Add MongoDB for data persistence and contact storage
-4. **Deployment**: Deploy frontend and backend separately
-5. **Authentication**: Add admin panel for managing content
+### POST `/api/certificates`
+Creates a new certificate record.
+
+Request body:
+```json
+{
+  "title": "Certificate Title",
+  "event": "Event Name",
+  "college": "College Name",
+  "location": "Location",
+  "description": "Description",
+  "fileUrl": "/path/to/certificate.pdf"
+}
+```
+
+### POST `/api/chat`
+Sends a chat message to the AI assistant and stores conversation history.
+
+Request body:
+```json
+{
+  "message": "Tell me about your experience",
+  "history": [
+    { "role": "user", "content": "Hi" },
+    { "role": "assistant", "content": "Hello! How can I help?" }
+  ],
+  "sessionId": "optional-session-id"
+}
+```
+
+Response:
+```json
+{
+  "success": true,
+  "reply": "...",
+  "sessionId": "session_1234567890"
+}
+```
+
+## ✅ Notes
+
+- The AI chatbot is powered by Groq SDK and can fall back to mock responses when the API key is not configured.
+- Frontend API calls use `VITE_API_BASE_URL` or default to `http://localhost:5000`.
+- Backend stores contact messages, certificates, and chat sessions in MongoDB.
 
 ## 📝 Scripts
 
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm run preview` - Preview production build
-- `npm run test` - Run tests
+From the root project:
+- `npm run dev` — Start the frontend development server
+- `npm run build` — Build the frontend for production
+- `npm run preview` — Preview the production build
+- `npm run test` — Run Vitest tests
+
+From `backend/`:
+- `npm run dev` — Start the backend with nodemon
+- `npm start` — Start the backend with Node
+
+## 🔧 Certificate Upload UI
+- Admin upload page available at `/upload-certificate`
+- Uses `multipart/form-data` to upload PDF certificates to the backend
+- Uploaded PDFs are served from `/uploads/certificates`

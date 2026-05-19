@@ -1,12 +1,13 @@
-import { Trophy, Zap, Award, X, Download, Eye, Loader2 } from "lucide-react";
+import { Trophy, Zap, Award, X, Download, Eye, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import ScrollReveal from "./ScrollReveal";
 import { motion, AnimatePresence } from "framer-motion";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { fetchCertificates, type Certificate } from "@/lib/api";
 
 const iconMap: Record<string, typeof Trophy> = {
   Hackathon: Zap,
   "Product Building Competition": Award,
+  "Idea Presentation Contest": Award,
 };
 
 const gradients = [
@@ -15,11 +16,37 @@ const gradients = [
   { gradient: "from-accent/30 via-neon-cyan/20 to-transparent", iconGradient: "from-accent/30 to-neon-cyan/10" },
 ];
 
+const ACHIEVEMENTS_CONFIG_URL = "/certificates/achievements.json";
+
 // Fallback data when backend is unavailable
 const fallbackCertificates: Certificate[] = [
-  { title: "e-Learn Application", event: "Hackathon", college: "Vidyavardhaka College of Engineering", location: "Mysore", description: "24-hour hackathon participation", fileUrl: "/certificates/hackathon-mysore.pdf" },
-  { title: "Anemia Detection App", event: "Hackathon", college: "Presidency University", location: "Bangalore", description: "24-hour hackathon participation", fileUrl: "/certificates/presidency-hackathon.pdf" },
-  { title: "Root to Rise", event: "Product Building Competition", college: "VTU Regional Center", location: "Mysuru", description: "4-hour competition participation", fileUrl: "/certificates/vtu-competition.pdf" },
+  {
+    title: "Mini-Anveshana 2024",
+    event: "Idea Presentation Contest",
+    college: "SDM Institute of Technology (SDMIT)",
+    location: "Ujire",
+    date: "18 October 2024",
+    description: "Certificate of Appreciation for participating in the Mini-Anveshana 2024 idea presentation contest.",
+    fileName: "mini-anveshana-2024.pdf",
+  },
+  {
+    title: "INFOTHON 4.0",
+    event: "National Level Hackathon",
+    college: "Vidyavardhaka College of Engineering",
+    location: "Mysore",
+    date: "15-16 February 2025",
+    description: "Certificate of participation for the 24-hour INFOTHON 4.0 hackathon event.",
+    fileName: "infothon-4-0-2025.pdf",
+  },
+  {
+    title: "Nexovate’25",
+    event: "National Level Hackathon",
+    college: "Presidency University Bengaluru",
+    location: "Bengaluru",
+    date: "29-30 August 2025",
+    description: "Certificate of participation for Nexovate’25 national level hackathon organized by Harvest Club.",
+    fileName: "nexovate-25-2025.pdf",
+  },
 ];
 
 const cardVariants = {
@@ -28,6 +55,18 @@ const cardVariants = {
     opacity: 1, y: 0,
     transition: { delay: i * 0.15, duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] },
   }),
+};
+
+const getCertificateUrl = (cert: Certificate) => {
+  if (cert.fileUrl) return cert.fileUrl;
+  if (cert.fileName) return `/certificates/${cert.fileName}`;
+  return "/certificates/placeholder.pdf";
+};
+
+const loadLocalAchievements = async () => {
+  const res = await fetch(ACHIEVEMENTS_CONFIG_URL);
+  if (!res.ok) throw new Error("Local certificate config not found");
+  return res.json() as Promise<Certificate[]>;
 };
 
 const CertificateModal = ({ isOpen, onClose, cert }: { isOpen: boolean; onClose: () => void; cert: Certificate | null }) => (
@@ -55,12 +94,13 @@ const CertificateModal = ({ isOpen, onClose, cert }: { isOpen: boolean; onClose:
               <h3 className="font-heading text-2xl font-bold text-foreground mb-2">{cert.event}</h3>
               <p className="text-primary font-medium">{cert.title}</p>
               <p className="text-muted-foreground text-sm mt-1">{cert.college}, {cert.location}</p>
+              {cert.date && <p className="text-secondary-foreground text-sm mt-2">{cert.date}</p>}
             </div>
 
             {/* PDF Preview */}
             <div className="glass rounded-xl p-4">
               <iframe
-                src={cert.fileUrl}
+                src={getCertificateUrl(cert)}
                 className="w-full h-64 md:h-80 rounded-lg border border-border/30"
                 title={`${cert.title} certificate`}
               />
@@ -70,7 +110,7 @@ const CertificateModal = ({ isOpen, onClose, cert }: { isOpen: boolean; onClose:
 
             <div className="flex gap-3 justify-center">
               <a
-                href={cert.fileUrl}
+                href={getCertificateUrl(cert)}
                 download
                 className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-medium text-sm magnetic-btn relative overflow-hidden group inline-flex items-center gap-2"
               >
@@ -93,11 +133,69 @@ const AchievementsSection = () => {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Certificate | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const sliderRef = useRef<HTMLDivElement | null>(null);
+
+  const scrollToIndex = (index: number) => {
+    if (!sliderRef.current) return;
+    const target = sliderRef.current.children[index] as HTMLElement | undefined;
+    if (!target) return;
+    sliderRef.current.scrollTo({ left: target.offsetLeft, behavior: "smooth" });
+    setActiveIndex(index);
+  };
+
+  const handleSliderClick = (direction: "left" | "right") => {
+    const nextIndex = direction === "left" ? Math.max(activeIndex - 1, 0) : Math.min(activeIndex + 1, certificates.length - 1);
+    scrollToIndex(nextIndex);
+  };
+
+  const updateActiveIndex = () => {
+    if (!sliderRef.current) return;
+    const scrollLeft = sliderRef.current.scrollLeft;
+    const children = Array.from(sliderRef.current.children) as HTMLElement[];
+    let closest = 0;
+    let minDiff = Infinity;
+    children.forEach((child, index) => {
+      const diff = Math.abs(child.offsetLeft - scrollLeft);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closest = index;
+      }
+    });
+    setActiveIndex(closest);
+  };
+
+  useEffect(() => {
+    if (!sliderRef.current) return;
+    const slider = sliderRef.current;
+    slider.addEventListener("scroll", updateActiveIndex, { passive: true });
+    return () => slider.removeEventListener("scroll", updateActiveIndex);
+  }, [certificates]);
+
+  useEffect(() => {
+    if (isPaused || certificates.length <= 1) return;
+    const interval = window.setInterval(() => {
+      const nextIndex = activeIndex === certificates.length - 1 ? 0 : activeIndex + 1;
+      scrollToIndex(nextIndex);
+    }, 4500);
+    return () => window.clearInterval(interval);
+  }, [activeIndex, certificates.length, isPaused]);
 
   useEffect(() => {
     fetchCertificates()
-      .then(setCertificates)
-      .catch(() => setCertificates(fallbackCertificates))
+      .then(async (data) => {
+        if (data && data.length > 0) {
+          setCertificates(data);
+        } else {
+          const localCerts = await loadLocalAchievements().catch(() => fallbackCertificates);
+          setCertificates(localCerts);
+        }
+      })
+      .catch(async () => {
+        const localCerts = await loadLocalAchievements().catch(() => fallbackCertificates);
+        setCertificates(localCerts);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -121,42 +219,85 @@ const AchievementsSection = () => {
             <Loader2 className="animate-spin text-primary" size={32} />
           </div>
         ) : (
-          <div className="grid md:grid-cols-3 gap-6">
-            {certificates.map((cert, i) => {
-              const g = gradients[i % gradients.length];
-              const Icon = iconMap[cert.event] || Trophy;
-              return (
-                <motion.div key={cert.title} custom={i} variants={cardVariants} initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-60px" }}>
-                  <motion.div
-                    className="achievement-glass gradient-border rounded-2xl p-7 h-full flex flex-col relative overflow-hidden group cursor-default"
-                    whileHover={{ y: -6, scale: 1.01 }}
-                    transition={{ type: "spring", stiffness: 300, damping: 25 }}
-                  >
-                    <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${g.gradient} opacity-60 group-hover:opacity-100 transition-opacity`} />
-                    <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${g.iconGradient} flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300`}>
-                      <Icon className="text-foreground" size={24} />
-                    </div>
-                    <span className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1 rounded-full bg-primary/10 text-primary/90 border border-primary/10 mb-4 w-fit">
-                      {cert.event}
-                    </span>
-                    <h3 className="font-heading text-lg font-bold text-foreground mb-1">{cert.title}</h3>
-                    <p className="text-muted-foreground text-xs mb-4">{cert.college}, {cert.location}</p>
-                    <p className="text-secondary-foreground text-sm leading-relaxed mb-6 flex-1">{cert.description}</p>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => handleSliderClick("left")}
+              className="absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-background/90 p-2 shadow-xl shadow-background/30 ring-1 ring-border/50 hover:bg-background transition-opacity"
+              aria-label="Scroll achievements left"
+            >
+              <ChevronLeft size={20} />
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSliderClick("right")}
+              className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-background/90 p-2 shadow-xl shadow-background/30 ring-1 ring-border/50 hover:bg-background transition-opacity"
+              aria-label="Scroll achievements right"
+            >
+              <ChevronRight size={20} />
+            </button>
+            <div className="overflow-hidden rounded-3xl" onMouseEnter={() => setIsPaused(true)} onMouseLeave={() => setIsPaused(false)}>
+              <div
+                ref={sliderRef}
+                className="flex gap-6 px-6 py-4 snap-x snap-mandatory overflow-x-auto scroll-smooth scrollbar-thin scrollbar-track-transparent scrollbar-thumb-primary/30 scrollbar-thumb-rounded-full"
+                style={{ WebkitOverflowScrolling: "touch" }}
+              >
+                {certificates.map((cert, i) => {
+                  const g = gradients[i % gradients.length];
+                  const Icon = iconMap[cert.event] || Trophy;
+                  return (
+                    <motion.div
+                      key={cert.title}
+                      custom={i}
+                      variants={cardVariants}
+                      initial="hidden"
+                      whileInView="visible"
+                      viewport={{ once: true, margin: "-60px" }}
+                      className="snap-start min-w-[300px] md:min-w-[340px] max-w-[340px] flex-none"
+                    >
+                      <motion.div
+                        className="achievement-glass gradient-border rounded-2xl p-7 h-[430px] flex flex-col justify-between relative overflow-hidden group cursor-default"
+                        whileHover={{ y: -6, scale: 1.01 }}
+                        transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                      >
+                        <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${g.gradient} opacity-60 group-hover:opacity-100 transition-opacity`} />
+                        <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${g.iconGradient} flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300`}>
+                          <Icon className="text-foreground" size={24} />
+                        </div>
+                        <span className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1 rounded-full bg-primary/10 text-primary/90 border border-primary/10 mb-4 w-fit">
+                          {cert.event}
+                        </span>
+                        <h3 className="font-heading text-lg font-bold text-foreground mb-1">{cert.title}</h3>
+                        <p className="text-muted-foreground text-xs mb-2">{cert.college}, {cert.location}</p>
+                        {cert.date && <p className="text-secondary-foreground text-xs mb-4">{cert.date}</p>}
+                        <p className="text-secondary-foreground text-sm leading-relaxed mb-6 flex-1">{cert.description}</p>
 
-                    <div className="flex gap-3">
-                      <motion.button onClick={() => openModal(cert)} className="flex items-center gap-1.5 px-4 py-2 rounded-xl glass text-sm text-foreground hover:border-primary/40 transition-all group/btn" whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
-                        <Eye size={14} className="text-muted-foreground group-hover/btn:text-primary transition-colors" />
-                        View
-                      </motion.button>
-                      <motion.a href={cert.fileUrl} download className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary/10 text-sm text-primary hover:bg-primary/20 transition-all border border-primary/10" whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
-                        <Download size={14} />
-                        Certificate
-                      </motion.a>
-                    </div>
-                  </motion.div>
-                </motion.div>
-              );
-            })}
+                        <div className="flex gap-3">
+                          <motion.button onClick={() => openModal(cert)} className="flex items-center gap-1.5 px-4 py-2 rounded-xl glass text-sm text-foreground hover:border-primary/40 transition-all group/btn" whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+                            <Eye size={14} className="text-muted-foreground group-hover/btn:text-primary transition-colors" />
+                            View
+                          </motion.button>
+                          <motion.a href={getCertificateUrl(cert)} download className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary/10 text-sm text-primary hover:bg-primary/20 transition-all border border-primary/10" whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+                            <Download size={14} />
+                            Certificate
+                          </motion.a>
+                        </div>
+                      </motion.div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="mt-4 flex justify-center gap-2">
+              {certificates.map((_, index) => (
+                <button
+                  key={index}
+                  type="button"
+                  onClick={() => scrollToIndex(index)}
+                  className={`h-2.5 w-2.5 rounded-full transition-all ${index === activeIndex ? "bg-primary" : "bg-border/60 hover:bg-border"}`}
+                />
+              ))}
+            </div>
           </div>
         )}
       </div>
