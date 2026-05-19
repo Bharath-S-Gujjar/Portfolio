@@ -12,16 +12,21 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const EMAIL_USER = process.env.EMAIL_USER;
-const EMAIL_PASS = process.env.EMAIL_PASS;
+// const EMAIL_USER = process.env.EMAIL_USER;
+// const EMAIL_PASS = process.env.EMAIL_PASS;
 const MONGODB_URI = process.env.MONGODB_URI;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const MOCK_AI_CHAT = process.env.MOCK_AI_CHAT === 'true';
 
-if (!EMAIL_USER || !EMAIL_PASS) {
-  console.error('Missing EMAIL_USER or EMAIL_PASS in backend/.env');
-  process.exit(1);
-}
+// if (!EMAIL_USER || !EMAIL_PASS) {
+//   console.error('Missing EMAIL_USER or EMAIL_PASS in backend/.env');
+//   process.exit(1);
+// }
+
+const SMTP_HOST = process.env.SMTP_HOST;
+const SMTP_PORT = process.env.SMTP_PORT;
+const SMTP_USER = process.env.SMTP_USER;
+const SMTP_PASS = process.env.SMTP_PASS;
 
 if (!MONGODB_URI) {
   console.error('Missing MONGODB_URI in backend/.env');
@@ -126,12 +131,12 @@ const requireAdmin = (req, res, next) => {
 
 // Configure nodemailer transporter
 const transporter = nodemailer.createTransport({
-  host: "smtp-relay.brevo.com",
-  port: 587,
+  host: SMTP_HOST,
+  port: Number(SMTP_PORT),
   secure: false,
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
+    user: SMTP_USER,
+    pass: SMTP_PASS,
   },
 });
 
@@ -205,8 +210,10 @@ app.post('/api/contact', async (req, res) => {
 
     // Send email
     const mailOptions = {
-      from: EMAIL_USER,
-      to: EMAIL_USER,
+      // from: EMAIL_USER,
+      // to: EMAIL_USER,
+      from: SMTP_USER,
+      to: 'bharathsgujjar635@gmail.com',
       subject: 'Portfolio Contact',
       html: `
         <h2>New Contact Message</h2>
