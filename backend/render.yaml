@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: portfolio-backend
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: MONGODB_URI
+        scope: run
+        value: ${MONGODB_URI}
+      - key: EMAIL_USER
+        scope: run
+        value: ${EMAIL_USER}
+      - key: EMAIL_PASS
+        scope: run
+        value: ${EMAIL_PASS}
+      - key: GROQ_API_KEY
+        scope: run
+        value: ${GROQ_API_KEY}
+      - key: FRONTEND_URL
+        scope: run
+        value: ${FRONTEND_URL}
+      - key: ALLOWED_ORIGINS
+        scope: run
+        value: ${ALLOWED_ORIGINS}
+      - key: NODE_ENV
+        scope: run
+        value: production
+      - key: PORT
+        scope: run
+        value: 5000

@@ -43,7 +43,16 @@ const groq = new Groq({
 });
 
 // Middleware
-app.use(cors());
+const corsOptions = {
+  origin: process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
+    : ['http://localhost:3000', 'http://localhost:8080'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 const uploadBaseDir = path.join(__dirname, 'uploads');
