@@ -112,13 +112,33 @@ const requireAdmin = (req, res, next) => {
 };
 
 // Configure nodemailer transporter
+
+
+// const transporter = nodemailer.createTransport({
+//   host: 'smtp.gmail.com',
+//   port: 465,
+//   secure: true,
+//   auth: {
+//     user: EMAIL_USER,
+//     pass: EMAIL_PASS
+//   }
+// });
+
+// Configure nodemailer transporter
 const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 465,
-  secure: true,
+  service: 'gmail',
   auth: {
     user: EMAIL_USER,
     pass: EMAIL_PASS
+  },
+
+  // Prevent Render timeout issues
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 10000,
+
+  tls: {
+    rejectUnauthorized: false
   }
 });
 
