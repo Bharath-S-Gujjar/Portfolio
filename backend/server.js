@@ -126,20 +126,13 @@ const requireAdmin = (req, res, next) => {
 
 // Configure nodemailer transporter
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: "smtp-relay.brevo.com",
+  port: 587,
+  secure: false,
   auth: {
-    user: EMAIL_USER,
-    pass: EMAIL_PASS
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
   },
-
-  // Prevent Render timeout issues
-  connectionTimeout: 10000,
-  greetingTimeout: 10000,
-  socketTimeout: 10000,
-
-  tls: {
-    rejectUnauthorized: false
-  }
 });
 
 transporter.verify((error, success) => {
