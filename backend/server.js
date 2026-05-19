@@ -130,21 +130,29 @@ const requireAdmin = (req, res, next) => {
 // });
 
 // Configure nodemailer transporter
+// Configure nodemailer transporter
 const transporter = nodemailer.createTransport({
-  host: SMTP_HOST,
-  port: Number(SMTP_PORT),
+  host: process.env.SMTP_HOST,
+  port: 587,
   secure: false,
+  requireTLS: true,
   auth: {
-    user: SMTP_USER,
-    pass: SMTP_PASS,
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 10000,
+  tls: {
+    rejectUnauthorized: false,
   },
 });
 
 transporter.verify((error, success) => {
   if (error) {
-    console.error('Nodemailer transporter verification failed:', error);
+    console.error('SMTP verification failed:', error);
   } else {
-    console.log('Nodemailer transporter verified successfully');
+    console.log('✅ SMTP server is ready');
   }
 });
 
@@ -212,7 +220,7 @@ app.post('/api/contact', async (req, res) => {
     const mailOptions = {
       // from: EMAIL_USER,
       // to: EMAIL_USER,
-      from: SMTP_USER,
+       from: `"Portfolio Contact" <bharathsgujjar635@gmail.com>`,
       to: 'bharathsgujjar635@gmail.com',
       subject: 'Portfolio Contact',
       html: `
