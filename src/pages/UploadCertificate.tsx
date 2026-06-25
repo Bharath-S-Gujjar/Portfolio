@@ -4,7 +4,23 @@ import { uploadCertificate } from "@/lib/api";
 import { getErrorMessage } from "@/lib/utils";
 import ScrollReveal from "@/components/ScrollReveal";
 
+import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+
 const UploadCertificate = () => {
+  const navigate = useNavigate();
+  const adminToken = localStorage.getItem("adminToken");
+
+  // Redirect to admin panel if not authenticated
+  useEffect(() => {
+    if (!adminToken) {
+      navigate("/admin", { replace: true });
+    }
+  }, [adminToken, navigate]);
+
+  if (!adminToken) {
+    return null; // Don't render while redirecting
+  }
   const [title, setTitle] = useState("");
   const [eventName, setEventName] = useState("");
   const [college, setCollege] = useState("");
@@ -32,7 +48,7 @@ const UploadCertificate = () => {
 
     setUploading(true);
     try {
-      await uploadCertificate(formData);
+      await uploadCertificate(formData, adminToken);
       toast({ title: "Certificate uploaded successfully!" });
       setTitle("");
       setEventName("");

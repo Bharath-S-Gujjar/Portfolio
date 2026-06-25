@@ -27,6 +27,7 @@ const AdminPanel = () => {
   const [uploadingCV, setUploadingCV] = useState(false);
   const [creatingProject, setCreatingProject] = useState(false);
   const [title, setTitle] = useState("");
+  const [currentCvUrl, setCurrentCvUrl] = useState<string>("/cv.pdf");
   const [eventName, setEventName] = useState("");
   const [college, setCollege] = useState("");
   const [location, setLocation] = useState("");
@@ -154,9 +155,12 @@ const AdminPanel = () => {
 
     setUploadingCV(true);
     try {
-      await uploadCV(formData, adminToken);
+      const { fileUrl } = await uploadCV(formData, adminToken);
       toast({ title: "CV uploaded successfully" });
       setCVFile(null);
+      if (fileUrl) {
+        setCurrentCvUrl(fileUrl);
+      }
     } catch (error: unknown) {
       toast({ title: parseErrorMessage(error) || "CV upload failed", variant: "destructive" });
     } finally {
@@ -311,7 +315,7 @@ const AdminPanel = () => {
                       </form>
                       <div className="mt-4 text-sm text-muted-foreground">
                         <p>
-                          Current CV: <a href="/cv.pdf" target="_blank" rel="noreferrer" className="text-primary hover:underline">View</a> · <a href="/cv.pdf" download className="text-primary hover:underline">Download</a>
+                          Current CV: <a href={currentCvUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline">View</a> · <a href={currentCvUrl} download className="text-primary hover:underline">Download</a>
                         </p>
                       </div>
                     </div>

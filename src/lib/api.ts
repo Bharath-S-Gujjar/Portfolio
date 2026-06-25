@@ -142,7 +142,7 @@ export async function deleteProject(id: string, token: string): Promise<void> {
   }
 }
 
-export async function uploadCV(formData: FormData, token: string): Promise<void> {
+export async function uploadCV(formData: FormData, token: string): Promise<{ fileUrl: string }> {
   const res = await fetch(`${API_BASE_URL}/api/admin/upload-cv`, {
     method: "POST",
     headers: {
@@ -155,6 +155,8 @@ export async function uploadCV(formData: FormData, token: string): Promise<void>
     const err = await res.json().catch(() => ({ message: "Failed to upload CV" }));
     throw new Error(err.message || "Failed to upload CV");
   }
+
+  return res.json();
 }
 
 export async function updateCertificate(id: string, updates: Partial<Certificate>, token: string): Promise<Certificate> {

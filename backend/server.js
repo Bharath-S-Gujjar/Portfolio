@@ -52,14 +52,20 @@ const groq = new Groq({ apiKey: GROQ_API_KEY });
 
 // ── Middleware ─────────────────────────────────────────────────────────────────
 
+const defaultLocalOrigins = ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:8080'];
+const configuredOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
+  : [];
+const allowedOrigins = Array.from(new Set([...configuredOrigins, ...defaultLocalOrigins]));
+
 const corsOptions = {
-  origin: process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
-    : ['http://localhost:3000', 'http://localhost:8080'],
+  origin: allowedOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 };
+
+console.log('Allowed CORS origins:', allowedOrigins);
 
 app.use(cors(corsOptions));
 app.use(express.json());
@@ -73,7 +79,38 @@ const cvDir = path.join(__dirname, '..', 'public');
 fs.mkdirSync(uploadCertificatesDir, { recursive: true });
 fs.mkdirSync(cvDir, { recursive: true });
 
+const cvPath = path.join(cvDir, 'cv.pdf');
+
+const deleteExistingCV = (req, res, next) => {
+  try {
+    if (fs.existsSync(cvPath)) {
+      fs.unlinkSync(cvPath);
+    }
+  } catch (err) {
+    console.warn('Could not delete existing CV:', err);
+  }
+  next();
+};
+
+app.get('/cv.pdf', (req, res) => {
+  try {
+    if (!fs.existsSync(cvPath)) {
+      return res.status(404).send('Not found');
+    }
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+    res.set('Content-Disposition', 'inline; filename="cv.pdf"');
+    return res.sendFile(cvPath);
+  } catch (err) {
+    console.error('Error serving CV:', err);
+    return res.status(500).send('Failed to serve CV');
+  }
+});
+
 app.use('/uploads', express.static(uploadBaseDir));
+// Serve frontend `public/` so uploaded CV (`cv.pdf`) is accessible at `/cv.pdf`
+app.use(express.static(path.join(__dirname, '..', 'public')));
 
 const fileStorage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadCertificatesDir),
@@ -113,12 +150,34 @@ const uploadCV = multer({
 // ── Admin auth ────────────────────────────────────────────────────────────────
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
-const adminTokens = new Set();
+const TOKEN_SECRET = process.env.TOKEN_SECRET || 'portfolio-admin-secret-key-change-in-production';
+
+// Generate a signed token
+const generateAdminToken = () => {
+  const payload = `admin:${Date.now()}`;
+  const signature = crypto.createHmac('sha256', TOKEN_SECRET).update(payload).digest('hex');
+  return `${payload}:${signature}`;
+};
+
+// Verify a signed token
+const verifyAdminToken = (token) => {
+  if (!token || typeof token !== 'string') return false;
+  const parts = token.split(':');
+  if (parts.length !== 3) return false; // payload:timestamp:signature
+  
+  const [prefix, timestamp, signature] = parts;
+  if (prefix !== 'admin') return false;
+  
+  const payload = `${prefix}:${timestamp}`;
+  const expectedSignature = crypto.createHmac('sha256', TOKEN_SECRET).update(payload).digest('hex');
+  
+  return signature === expectedSignature;
+};
 
 const requireAdmin = (req, res, next) => {
   const auth = req.headers.authorization || '';
   const token = auth.replace('Bearer ', '').trim();
-  if (!token || !adminTokens.has(token)) {
+  if (!token || !verifyAdminToken(token)) {
     return res.status(401).json({ success: false, message: 'Unauthorized' });
   }
   next();
@@ -141,8 +200,7 @@ app.post('/api/admin/login', (req, res) => {
   if (!password || password !== ADMIN_PASSWORD) {
     return res.status(401).json({ success: false, message: 'Invalid admin password' });
   }
-  const token = crypto.randomBytes(24).toString('hex');
-  adminTokens.add(token);
+  const token = generateAdminToken();
   res.json({ success: true, token });
 });
 
@@ -316,7 +374,7 @@ app.post('/api/projects', requireAdmin, async (req, res) => {
       role,
       description,
       link: link || '',
-      highlights: Array.isArray(highlights) ? highlights : [],
+      highlights: normalizedHighlights,
       gradient: gradient || 'from-neon-purple/20 to-neon-blue/5',
     });
 
@@ -370,12 +428,13 @@ app.delete('/api/projects/:id', requireAdmin, async (req, res) => {
 
 // ── CV upload ─────────────────────────────────────────────────────────────────
 
-app.post('/api/admin/upload-cv', requireAdmin, uploadCV.single('cv'), async (req, res) => {
+app.post('/api/admin/upload-cv', requireAdmin, deleteExistingCV, uploadCV.single('cv'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, message: 'CV PDF file is required' });
     }
-    res.status(201).json({ success: true, fileUrl: '/cv.pdf' });
+    const fileUrl = `/cv.pdf?ts=${Date.now()}`;
+    res.status(201).json({ success: true, fileUrl });
   } catch (error) {
     console.error('Error uploading CV:', error);
     res.status(500).json({ success: false, message: 'Failed to upload CV' });

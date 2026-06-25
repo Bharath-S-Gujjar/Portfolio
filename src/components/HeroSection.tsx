@@ -227,11 +227,15 @@ const HeroSection = () => {
             </p>
           </div>
           <div className="flex gap-6">
-            {["LinkedIn", "GitHub", "LeetCode"].map((label) => (
-              <a key={label} href={`https://${label.toLowerCase()}.com`} className="hover:text-primary transition-colors group">
-                <span className="text-muted-foreground group-hover:text-primary">/ </span>{label}
-              </a>
-            ))}
+            <a href="https://linkedin.com/in/bharath-s-gujjar-5b0976297" target="_blank" rel="noreferrer" className="hover:text-primary transition-colors group">
+              <span className="text-muted-foreground group-hover:text-primary">/ </span>LinkedIn
+            </a>
+            <a href="https://github.com/Bharath-S-Gujjar" target="_blank" rel="noreferrer" className="hover:text-primary transition-colors group">
+              <span className="text-muted-foreground group-hover:text-primary">/ </span>GitHub
+            </a>
+            <a href="https://leetcode.com/u/Bharath-S-Gujjar/" target="_blank" rel="noreferrer" className="hover:text-primary transition-colors group">
+              <span className="text-muted-foreground group-hover:text-primary">/ </span>LeetCode
+            </a>
           </div>
         </motion.div>
       </div>
