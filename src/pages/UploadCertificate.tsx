@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { uploadCertificate } from "@/lib/api";
 import { getErrorMessage } from "@/lib/utils";
@@ -10,17 +10,6 @@ import { useNavigate } from "react-router-dom";
 const UploadCertificate = () => {
   const navigate = useNavigate();
   const adminToken = localStorage.getItem("adminToken");
-
-  // Redirect to admin panel if not authenticated
-  useEffect(() => {
-    if (!adminToken) {
-      navigate("/admin", { replace: true });
-    }
-  }, [adminToken, navigate]);
-
-  if (!adminToken) {
-    return null; // Don't render while redirecting
-  }
   const [title, setTitle] = useState("");
   const [eventName, setEventName] = useState("");
   const [college, setCollege] = useState("");
@@ -29,6 +18,16 @@ const UploadCertificate = () => {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (!adminToken) {
+      navigate("/admin", { replace: true });
+    }
+  }, [adminToken, navigate]);
+
+  if (!adminToken) {
+    return null;
+  }
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();

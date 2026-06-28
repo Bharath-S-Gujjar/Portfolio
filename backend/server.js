@@ -7,14 +7,20 @@ const cors = require('cors');
 const mongoose = require('mongoose');
 const multer = require('multer');
 const Groq = require('groq-sdk');
+const { v2: cloudinary } = require('cloudinary');
 
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const MONGODB_URI = process.env.MONGODB_URI;
+const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const MOCK_AI_CHAT = process.env.MOCK_AI_CHAT === 'true';
+const USE_CLOUDINARY = Boolean(
+  process.env.CLOUDINARY_CLOUD_NAME &&
+    process.env.CLOUDINARY_API_KEY &&
+    process.env.CLOUDINARY_API_SECRET
+);
 
 // ── Validation ────────────────────────────────────────────────────────────────
 
@@ -45,55 +51,126 @@ const ContactMessage = require('./models/ContactMessage');
 const Certificate = require('./models/Certificate');
 const Project = require('./models/Project');
 const ChatSession = require('./models/ChatSession');
+const Resume = require('./models/Resume');
 
 // ── Groq client ───────────────────────────────────────────────────────────────
 
 const groq = new Groq({ apiKey: GROQ_API_KEY });
 
+if (USE_CLOUDINARY) {
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+    secure: true,
+  });
+} else {
+  console.warn('Cloudinary env vars not set. Uploads will use local disk, which is not durable on Render.');
+}
+
 // ── Middleware ─────────────────────────────────────────────────────────────────
 
-const defaultLocalOrigins = ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:8080'];
+const defaultLocalOrigins =
+  process.env.NODE_ENV === 'production'
+    ? []
+    : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:8080'];
+const frontendOrigins = process.env.FRONTEND_URL
+  ? process.env.FRONTEND_URL.split(',').map((o) => o.trim()).filter(Boolean)
+  : [];
 const configuredOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
   : [];
-const allowedOrigins = Array.from(new Set([...configuredOrigins, ...defaultLocalOrigins]));
+const allowedOrigins = Array.from(new Set([...frontendOrigins, ...configuredOrigins, ...defaultLocalOrigins]));
 
 const corsOptions = {
-  origin: allowedOrigins,
+  origin(origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error(`CORS blocked origin: ${origin}`));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 204,
 };
 
 console.log('Allowed CORS origins:', allowedOrigins);
 
 app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(express.json());
 
 // ── File storage ──────────────────────────────────────────────────────────────
 
 const uploadBaseDir = path.join(__dirname, 'uploads');
 const uploadCertificatesDir = path.join(uploadBaseDir, 'certificates');
-const cvDir = path.join(__dirname, '..', 'public');
+const cvDir = path.join(uploadBaseDir, 'resume');
 
 fs.mkdirSync(uploadCertificatesDir, { recursive: true });
 fs.mkdirSync(cvDir, { recursive: true });
 
 const cvPath = path.join(cvDir, 'cv.pdf');
 
-const deleteExistingCV = (req, res, next) => {
-  try {
-    if (fs.existsSync(cvPath)) {
-      fs.unlinkSync(cvPath);
-    }
-  } catch (err) {
-    console.warn('Could not delete existing CV:', err);
-  }
-  next();
+const getPublicBaseUrl = (req) => {
+  const configuredUrl = process.env.PUBLIC_API_URL || process.env.RENDER_EXTERNAL_URL;
+  if (configuredUrl) return configuredUrl.replace(/\/$/, '');
+  return `${req.protocol}://${req.get('host')}`;
 };
 
-app.get('/cv.pdf', (req, res) => {
+const toPublicUrl = (req, relativePath) => {
+  if (!relativePath) return '';
+  if (/^https?:\/\//i.test(relativePath)) return relativePath;
+  return `${getPublicBaseUrl(req)}${relativePath.startsWith('/') ? relativePath : `/${relativePath}`}`;
+};
+
+const localPathFromPublicUrl = (fileUrl) => {
+  if (!fileUrl) return null;
+  let pathname = fileUrl;
   try {
+    pathname = new URL(fileUrl).pathname;
+  } catch (_) {
+    pathname = fileUrl;
+  }
+  if (!pathname.startsWith('/uploads/')) return null;
+  const resolvedPath = path.resolve(uploadBaseDir, pathname.replace(/^\/uploads\//, ''));
+  const resolvedBase = path.resolve(uploadBaseDir);
+  return resolvedPath.startsWith(resolvedBase) ? resolvedPath : null;
+};
+
+const uploadBufferToCloudinary = (file, folder, publicId) =>
+  new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder,
+        public_id: publicId,
+        resource_type: 'raw',
+        overwrite: true,
+        use_filename: false,
+      },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result);
+      }
+    );
+    stream.end(file.buffer);
+  });
+
+app.get('/health', (req, res) => {
+  res.json({
+    success: true,
+    mongo: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    storage: USE_CLOUDINARY ? 'cloudinary' : 'local',
+  });
+});
+
+app.get('/cv.pdf', async (req, res) => {
+  try {
+    const resume = await Resume.findOne().sort({ updatedAt: -1 });
+    if (resume?.fileUrl) {
+      res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+      return res.redirect(resume.fileUrl);
+    }
+
     if (!fs.existsSync(cvPath)) {
       return res.status(404).send('Not found');
     }
@@ -109,8 +186,6 @@ app.get('/cv.pdf', (req, res) => {
 });
 
 app.use('/uploads', express.static(uploadBaseDir));
-// Serve frontend `public/` so uploaded CV (`cv.pdf`) is accessible at `/cv.pdf`
-app.use(express.static(path.join(__dirname, '..', 'public')));
 
 const fileStorage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadCertificatesDir),
@@ -126,7 +201,7 @@ const cvStorage = multer.diskStorage({
 });
 
 const upload = multer({
-  storage: fileStorage,
+  storage: USE_CLOUDINARY ? multer.memoryStorage() : fileStorage,
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (file.mimetype !== 'application/pdf') {
@@ -137,7 +212,7 @@ const upload = multer({
 });
 
 const uploadCV = multer({
-  storage: cvStorage,
+  storage: USE_CLOUDINARY ? multer.memoryStorage() : cvStorage,
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (file.mimetype !== 'application/pdf') {
@@ -275,6 +350,8 @@ app.post(
   requireAdmin,
   upload.single('certificate'),
   async (req, res) => {
+    let uploadedPublicId = '';
+    let localUploadedPath = req.file?.path || '';
     try {
       const { title, event, college, location, description } = req.body;
 
@@ -289,7 +366,23 @@ app.post(
         return res.status(400).json({ success: false, message: 'Certificate PDF file is required' });
       }
 
-      const fileUrl = `/uploads/certificates/${req.file.filename}`;
+      let fileUrl = '';
+      let provider = 'local';
+
+      if (USE_CLOUDINARY) {
+        const safeOriginalName = path.parse(req.file.originalname).name.replace(/[^a-zA-Z0-9_-]/g, '_');
+        const uploadResult = await uploadBufferToCloudinary(
+          req.file,
+          'portfolio/certificates',
+          `${Date.now()}-${safeOriginalName}`
+        );
+        fileUrl = uploadResult.secure_url;
+        uploadedPublicId = uploadResult.public_id;
+        provider = 'cloudinary';
+      } else {
+        fileUrl = toPublicUrl(req, `/uploads/certificates/${req.file.filename}`);
+      }
+
       const newCertificate = await Certificate.create({
         title,
         event,
@@ -297,12 +390,24 @@ app.post(
         location,
         description,
         fileUrl,
+        publicId: uploadedPublicId,
+        provider,
         date: new Date().toISOString().split('T')[0],
       });
 
       res.status(201).json({ success: true, certificate: newCertificate });
     } catch (error) {
       console.error('Error uploading certificate:', error);
+      if (uploadedPublicId) {
+        await cloudinary.uploader.destroy(uploadedPublicId, { resource_type: 'raw' }).catch((destroyError) => {
+          console.warn('Could not clean up Cloudinary certificate after failed save:', destroyError.message);
+        });
+      }
+      if (localUploadedPath && fs.existsSync(localUploadedPath)) {
+        fs.unlink(localUploadedPath, (unlinkError) => {
+          if (unlinkError) console.warn('Could not clean up local certificate after failed save:', unlinkError.message);
+        });
+      }
       res.status(500).json({ success: false, message: 'Failed to upload certificate' });
     }
   }
@@ -333,9 +438,13 @@ app.delete('/api/certificates/:id', requireAdmin, async (req, res) => {
       return res.status(404).json({ success: false, message: 'Certificate not found' });
     }
 
-    if (certificate.fileUrl && certificate.fileUrl.startsWith('/uploads/certificates/')) {
-      const filePath = path.join(__dirname, certificate.fileUrl.replace(/^\//, ''));
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    if (certificate.publicId && certificate.provider === 'cloudinary') {
+      await cloudinary.uploader.destroy(certificate.publicId, { resource_type: 'raw' }).catch((destroyError) => {
+        console.warn('Could not delete Cloudinary certificate:', destroyError.message);
+      });
+    } else {
+      const filePath = localPathFromPublicUrl(certificate.fileUrl);
+      if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
     }
 
     await Certificate.findByIdAndDelete(id);
@@ -368,6 +477,12 @@ app.post('/api/projects', requireAdmin, async (req, res) => {
         message: 'Required fields: title, role, description',
       });
     }
+
+    const normalizedHighlights = Array.isArray(highlights)
+      ? highlights.map((item) => String(item).trim()).filter(Boolean)
+      : typeof highlights === 'string'
+      ? highlights.split(',').map((item) => item.trim()).filter(Boolean)
+      : [];
 
     const project = await Project.create({
       title,
@@ -428,15 +543,54 @@ app.delete('/api/projects/:id', requireAdmin, async (req, res) => {
 
 // ── CV upload ─────────────────────────────────────────────────────────────────
 
-app.post('/api/admin/upload-cv', requireAdmin, deleteExistingCV, uploadCV.single('cv'), async (req, res) => {
+app.post('/api/admin/upload-cv', requireAdmin, uploadCV.single('cv'), async (req, res) => {
+  let uploadedPublicId = '';
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, message: 'CV PDF file is required' });
     }
-    const fileUrl = `/cv.pdf?ts=${Date.now()}`;
-    res.status(201).json({ success: true, fileUrl });
+
+    const previousResume = await Resume.findOne().sort({ updatedAt: -1 });
+    let storedFileUrl = '';
+    let provider = 'local';
+
+    if (USE_CLOUDINARY) {
+      const uploadResult = await uploadBufferToCloudinary(
+        req.file,
+        'portfolio/resume',
+        'cv'
+      );
+      storedFileUrl = uploadResult.secure_url;
+      uploadedPublicId = uploadResult.public_id;
+      provider = 'cloudinary';
+    } else {
+      storedFileUrl = toPublicUrl(req, '/cv.pdf');
+    }
+
+    const resume = await Resume.findOneAndUpdate(
+      {},
+      { fileUrl: storedFileUrl, publicId: uploadedPublicId, provider },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
+    if (
+      previousResume?.publicId &&
+      previousResume.provider === 'cloudinary' &&
+      previousResume.publicId !== uploadedPublicId
+    ) {
+      await cloudinary.uploader.destroy(previousResume.publicId, { resource_type: 'raw' }).catch((destroyError) => {
+        console.warn('Could not delete previous Cloudinary CV:', destroyError.message);
+      });
+    }
+
+    res.status(201).json({ success: true, fileUrl: `${getPublicBaseUrl(req)}/cv.pdf?ts=${Date.now()}`, resume });
   } catch (error) {
     console.error('Error uploading CV:', error);
+    if (uploadedPublicId) {
+      await cloudinary.uploader.destroy(uploadedPublicId, { resource_type: 'raw' }).catch((destroyError) => {
+        console.warn('Could not clean up Cloudinary CV after failed save:', destroyError.message);
+      });
+    }
     res.status(500).json({ success: false, message: 'Failed to upload CV' });
   }
 });
@@ -694,6 +848,29 @@ app.get('/api/chat/:sessionId', async (req, res) => {
 });
 
 // ── Start server ──────────────────────────────────────────────────────────────
+
+app.use('/api', (req, res) => {
+  res.status(404).json({ success: false, message: 'API route not found' });
+});
+
+app.use((error, req, res, next) => {
+  if (error.message?.startsWith('CORS blocked origin')) {
+    console.warn(error.message);
+    return res.status(403).json({ success: false, message: 'Origin is not allowed by CORS' });
+  }
+
+  if (error instanceof multer.MulterError) {
+    const message = error.code === 'LIMIT_FILE_SIZE' ? 'PDF file must be 10MB or smaller' : error.message;
+    return res.status(400).json({ success: false, message });
+  }
+
+  if (error.message === 'Only PDF files are allowed') {
+    return res.status(400).json({ success: false, message: error.message });
+  }
+
+  console.error('Unhandled server error:', error);
+  return res.status(500).json({ success: false, message: 'Internal server error' });
+});
 
 async function startServer() {
   try {

@@ -7,26 +7,30 @@ services:
     startCommand: npm start
     envVars:
       - key: MONGODB_URI
-        scope: run
-        value: ${MONGODB_URI}
-      - key: EMAIL_USER
-        scope: run
-        value: ${EMAIL_USER}
-      - key: EMAIL_PASS
-        scope: run
-        value: ${EMAIL_PASS}
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      - key: SENDER_EMAIL
+        sync: false
+      - key: CONTACT_RECEIVER_EMAIL
+        sync: false
       - key: GROQ_API_KEY
-        scope: run
-        value: ${GROQ_API_KEY}
+        sync: false
       - key: FRONTEND_URL
-        scope: run
-        value: ${FRONTEND_URL}
+        sync: false
       - key: ALLOWED_ORIGINS
-        scope: run
-        value: ${ALLOWED_ORIGINS}
+        sync: false
+      - key: PUBLIC_API_URL
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: TOKEN_SECRET
+        generateValue: true
       - key: NODE_ENV
-        scope: run
         value: production
-      - key: PORT
-        scope: run
-        value: 5000

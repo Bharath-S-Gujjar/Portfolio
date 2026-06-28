@@ -9,6 +9,8 @@ import {
   deleteProject,
   fetchCertificates,
   fetchProjects,
+  getBackendFileUrl,
+  getResumeUrl,
   seedAdminData,
   uploadCertificate,
   uploadCV,
@@ -27,7 +29,7 @@ const AdminPanel = () => {
   const [uploadingCV, setUploadingCV] = useState(false);
   const [creatingProject, setCreatingProject] = useState(false);
   const [title, setTitle] = useState("");
-  const [currentCvUrl, setCurrentCvUrl] = useState<string>("/cv.pdf");
+  const [currentCvUrl, setCurrentCvUrl] = useState<string>(() => getResumeUrl());
   const [eventName, setEventName] = useState("");
   const [college, setCollege] = useState("");
   const [location, setLocation] = useState("");
@@ -159,7 +161,7 @@ const AdminPanel = () => {
       toast({ title: "CV uploaded successfully" });
       setCVFile(null);
       if (fileUrl) {
-        setCurrentCvUrl(fileUrl);
+        setCurrentCvUrl(getBackendFileUrl(fileUrl));
       }
     } catch (error: unknown) {
       toast({ title: parseErrorMessage(error) || "CV upload failed", variant: "destructive" });
@@ -363,7 +365,7 @@ const AdminPanel = () => {
                                 </div>
                                 <div className="flex flex-col gap-2 items-end">
                                   {cert.fileUrl && (
-                                    <a href={cert.fileUrl} target="_blank" rel="noreferrer" className="text-sm text-primary hover:underline">
+                                    <a href={getBackendFileUrl(cert.fileUrl)} target="_blank" rel="noreferrer" className="text-sm text-primary hover:underline">
                                       View PDF
                                     </a>
                                   )}

@@ -2,7 +2,7 @@ import { Trophy, Zap, Award, X, Download, Eye, Loader2, ChevronLeft, ChevronRigh
 import ScrollReveal from "./ScrollReveal";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect, useRef } from "react";
-import { fetchCertificates, type Certificate } from "@/lib/api";
+import { fetchCertificates, getBackendFileUrl, type Certificate } from "@/lib/api";
 
 const iconMap: Record<string, typeof Trophy> = {
   Hackathon: Zap,
@@ -58,7 +58,7 @@ const cardVariants = {
 };
 
 const getCertificateUrl = (cert: Certificate) => {
-  if (cert.fileUrl) return cert.fileUrl;
+  if (cert.fileUrl) return getBackendFileUrl(cert.fileUrl);
   if (cert.fileName) return `/certificates/${cert.fileName}`;
   return "/certificates/placeholder.pdf";
 };

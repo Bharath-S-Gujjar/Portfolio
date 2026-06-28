@@ -14,20 +14,31 @@ Express.js backend for the portfolio website with contact form functionality.
    npm install
    ```
 
-3. Create a `.env` file with your Gmail credentials, MongoDB connection string, and Groq API key:
+3. Create a `.env` file with your MongoDB connection string, allowed frontend URL, Brevo credentials, and optional Cloudinary/Groq keys:
    ```
-   EMAIL_USER=your-email@gmail.com
-   EMAIL_PASS=your-app-password
    MONGODB_URI=mongodb://127.0.0.1:27017/portfolio
+   FRONTEND_URL=http://localhost:5173
+   ALLOWED_ORIGINS=http://localhost:5173
+   PUBLIC_API_URL=http://localhost:5000
+   BREVO_API_KEY=your-brevo-api-key
+   SENDER_EMAIL=verified-sender@example.com
+   CONTACT_RECEIVER_EMAIL=receiver@example.com
+   CLOUDINARY_CLOUD_NAME=your-cloud-name
+   CLOUDINARY_API_KEY=your-cloudinary-api-key
+   CLOUDINARY_API_SECRET=your-cloudinary-api-secret
    GROQ_API_KEY=your-groq-api-key
+   ADMIN_PASSWORD=change-this-password
+   TOKEN_SECRET=change-this-long-random-secret
    PORT=5000
    MOCK_AI_CHAT=false
    ```
 
    **Important Notes:** 
-   - Use Gmail App Password for `EMAIL_PASS`, not your regular password. Generate one at https://myaccount.google.com/apppasswords
-   - Get a Groq API key from the provider you're using
-   - Configure `MONGODB_URI` for your MongoDB database
+   - `FRONTEND_URL` and `ALLOWED_ORIGINS` must contain exact frontend origins. Do not use `*`.
+   - Configure `MONGODB_URI` for your MongoDB database. `MONGO_URI` is also accepted for local compatibility.
+   - Set Cloudinary variables in production. Render local disk uploads are temporary and can disappear after redeploys or instance restarts.
+   - `PUBLIC_API_URL` should be your deployed Render backend URL in production.
+   - Get a Groq API key from the provider you're using.
    - If `GROQ_API_KEY` is missing or `MOCK_AI_CHAT=true`, the chat endpoint uses mock replies
 
 4. Start the development server:
@@ -112,7 +123,7 @@ Uploads a certificate PDF file and creates a certificate record.
     "college": "College Name",
     "location": "Location",
     "description": "Description",
-    "fileUrl": "/uploads/certificates/1690000000000-certificate.pdf",
+    "fileUrl": "https://your-backend.onrender.com/uploads/certificates/1690000000000-certificate.pdf",
     "date": "2026-05-18"
   }
 }

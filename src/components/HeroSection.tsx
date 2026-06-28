@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import profileImg from "@/assets/profile.jpg";
+import { getResumeUrl } from "@/lib/api";
 
 const HeroSection = () => {
   const imgRef = useRef<HTMLDivElement>(null);
@@ -74,7 +74,7 @@ const HeroSection = () => {
               transition={{ delay: 0.9 }}
             >
               <a
-                href="/cv.pdf"
+                href={getResumeUrl()}
                 target="_blank"
                 rel="noreferrer"
                 className="px-7 py-3.5 rounded-xl bg-primary text-primary-foreground font-semibold magnetic-btn relative overflow-hidden group"

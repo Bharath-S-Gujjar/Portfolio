@@ -1,7 +1,21 @@
-// Configure your backend API base URL here
-// In development, point to your local Express server
-// In production, point to your deployed backend (Railway, Render, etc.)
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "");
+export const API_BASE_URL = configuredApiBaseUrl || (import.meta.env.DEV ? "http://localhost:5000" : "");
+
+if (!API_BASE_URL) {
+  console.error("Missing VITE_API_BASE_URL. Set it to the deployed Render backend URL.");
+}
+
+export function getBackendFileUrl(fileUrl?: string): string {
+  if (!fileUrl) return "";
+  if (/^https?:\/\//i.test(fileUrl)) return fileUrl;
+  if (!fileUrl.startsWith("/uploads/") && !fileUrl.startsWith("/cv.pdf")) return fileUrl;
+  if (!API_BASE_URL) return fileUrl;
+  return `${API_BASE_URL}${fileUrl.startsWith("/") ? fileUrl : `/${fileUrl}`}`;
+}
+
+export function getResumeUrl(): string {
+  return getBackendFileUrl(`/cv.pdf?ts=${Date.now()}`);
+}
 
 export interface Certificate {
   _id?: string;
@@ -69,7 +83,11 @@ export async function sendContactMessage(data: ContactPayload): Promise<{ succes
 export async function fetchCertificates(): Promise<Certificate[]> {
   const res = await fetch(`${API_BASE_URL}/api/certificates`);
   if (!res.ok) throw new Error("Failed to fetch certificates");
-  return res.json();
+  const certificates = (await res.json()) as Certificate[];
+  return certificates.map((certificate) => ({
+    ...certificate,
+    fileUrl: getBackendFileUrl(certificate.fileUrl),
+  }));
 }
 
 export async function uploadCertificate(formData: FormData, token?: string): Promise<Certificate> {
@@ -90,7 +108,7 @@ export async function uploadCertificate(formData: FormData, token?: string): Pro
   }
 
   const data = await res.json();
-  return data.certificate;
+  return { ...data.certificate, fileUrl: getBackendFileUrl(data.certificate?.fileUrl) };
 }
 
 export async function deleteCertificate(id: string, token: string): Promise<void> {
@@ -173,7 +191,7 @@ export async function updateCertificate(id: string, updates: Partial<Certificate
     throw new Error(err.message || "Failed to update certificate");
   }
   const data = await res.json();
-  return data.certificate;
+  return { ...data.certificate, fileUrl: getBackendFileUrl(data.certificate?.fileUrl) };
 }
 
 export async function updateProject(id: string, updates: Partial<Project>, token: string): Promise<Project> {
@@ -205,7 +223,14 @@ export async function seedAdminData(token: string): Promise<{ certificates: Cert
     const err = await res.json().catch(() => ({ message: "Failed to seed data" }));
     throw new Error(err.message || "Failed to seed data");
   }
-  return res.json();
+  const data = await res.json();
+  return {
+    certificates: data.certificates.map((certificate: Certificate) => ({
+      ...certificate,
+      fileUrl: getBackendFileUrl(certificate.fileUrl),
+    })),
+    projects: data.projects,
+  };
 }
 
 export async function adminLogin(password: string): Promise<{ token: string }> {

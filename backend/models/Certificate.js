@@ -7,6 +7,8 @@ const certificateSchema = new mongoose.Schema({
   location: { type: String, required: true },
   description: { type: String, required: true },
   fileUrl: { type: String, default: '' },
+  publicId: { type: String, default: '' },
+  provider: { type: String, enum: ['local', 'cloudinary'], default: 'local' },
   date: { type: String, required: true }
 }, {
   timestamps: true
