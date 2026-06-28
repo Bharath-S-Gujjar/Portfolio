@@ -41,6 +41,13 @@ export interface Project {
   updatedAt?: string;
 }
 
+export interface Resume {
+  _id: string;
+  fileUrl: string;
+  originalName?: string;
+  updatedAt?: string;
+}
+
 export interface ContactPayload {
   name: string;
   email: string;
@@ -160,6 +167,51 @@ export async function deleteProject(id: string, token: string): Promise<void> {
   }
 }
 
+export async function fetchResume(): Promise<Resume | null> {
+  const res = await fetch(`${API_BASE_URL}/api/resume`);
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Failed to fetch resume" }));
+    throw new Error(err.message || "Failed to fetch resume");
+  }
+  const data = await res.json();
+  return { ...data.resume, fileUrl: getBackendFileUrl(data.resume?.fileUrl) };
+}
+
+export async function uploadResume(file: File, token: string): Promise<Resume> {
+  const formData = new FormData();
+  formData.append("resume", file);
+
+  const res = await fetch(`${API_BASE_URL}/api/resume`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Failed to upload resume" }));
+    throw new Error(err.message || "Failed to upload resume");
+  }
+
+  const data = await res.json();
+  return { ...data.resume, fileUrl: getBackendFileUrl(data.resume?.fileUrl) };
+}
+
+export async function deleteResume(token: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/api/resume`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Failed to delete resume" }));
+    throw new Error(err.message || "Failed to delete resume");
+  }
+}
+
 export async function uploadCV(formData: FormData, token: string): Promise<{ fileUrl: string }> {
   const res = await fetch(`${API_BASE_URL}/api/admin/upload-cv`, {
     method: "POST",
@@ -170,11 +222,12 @@ export async function uploadCV(formData: FormData, token: string): Promise<{ fil
   });
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: "Failed to upload CV" }));
-    throw new Error(err.message || "Failed to upload CV");
+    const err = await res.json().catch(() => ({ message: "Failed to upload resume" }));
+    throw new Error(err.message || "Failed to upload resume");
   }
 
-  return res.json();
+  const data = await res.json();
+  return { fileUrl: getBackendFileUrl(data.fileUrl || data.resume?.fileUrl) };
 }
 
 export async function updateCertificate(id: string, updates: Partial<Certificate>, token: string): Promise<Certificate> {

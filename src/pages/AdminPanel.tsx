@@ -7,15 +7,18 @@ import {
   createProject,
   deleteCertificate,
   deleteProject,
+  deleteResume,
   fetchCertificates,
   fetchProjects,
+  fetchResume,
   getBackendFileUrl,
   getResumeUrl,
   seedAdminData,
   uploadCertificate,
-  uploadCV,
+  uploadResume,
   type Certificate,
   type Project,
+  type Resume,
 } from "@/lib/api";
 
 const AdminPanel = () => {
@@ -26,16 +29,18 @@ const AdminPanel = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploadingCert, setUploadingCert] = useState(false);
-  const [uploadingCV, setUploadingCV] = useState(false);
+  const [uploadingResume, setUploadingResume] = useState(false);
+  const [deletingResume, setDeletingResume] = useState(false);
   const [creatingProject, setCreatingProject] = useState(false);
   const [title, setTitle] = useState("");
   const [currentCvUrl, setCurrentCvUrl] = useState<string>(() => getResumeUrl());
+  const [resume, setResume] = useState<Resume | null>(null);
   const [eventName, setEventName] = useState("");
   const [college, setCollege] = useState("");
   const [location, setLocation] = useState("");
   const [description, setDescription] = useState("");
   const [file, setFile] = useState<File | null>(null);
-  const [cvFile, setCVFile] = useState<File | null>(null);
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [projectTitle, setProjectTitle] = useState("");
   const [projectRole, setProjectRole] = useState("");
   const [projectDescription, setProjectDescription] = useState("");
@@ -60,9 +65,11 @@ const AdminPanel = () => {
     if (!adminToken) return;
     setLoading(true);
     try {
-      const [certs, projs] = await Promise.all([fetchCertificates(), fetchProjects()]);
+      const [certs, projs, currentResume] = await Promise.all([fetchCertificates(), fetchProjects(), fetchResume()]);
       setCertificates(certs);
       setProjects(projs);
+      setResume(currentResume);
+      setCurrentCvUrl(currentResume?.fileUrl || getResumeUrl());
     } catch (error: unknown) {
       toast({ title: parseErrorMessage(error), variant: "destructive" });
     } finally {
@@ -145,28 +152,48 @@ const AdminPanel = () => {
     }
   };
 
-  const handleCVUpload = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!cvFile) {
-      toast({ title: "Please choose a PDF file for CV", variant: "destructive" });
+  const handleResumeUpload = async (selectedFile: File | null) => {
+    if (!selectedFile) return;
+    if (selectedFile.type !== "application/pdf") {
+      toast({ title: "Please choose a PDF resume", variant: "destructive" });
+      setResumeFile(null);
       return;
     }
     if (!adminToken) return;
-    const formData = new FormData();
-    formData.append("cv", cvFile);
 
-    setUploadingCV(true);
+    setResumeFile(selectedFile);
+    setUploadingResume(true);
     try {
-      const { fileUrl } = await uploadCV(formData, adminToken);
-      toast({ title: "CV uploaded successfully" });
-      setCVFile(null);
-      if (fileUrl) {
-        setCurrentCvUrl(getBackendFileUrl(fileUrl));
-      }
+      const uploadedResume = await uploadResume(selectedFile, adminToken);
+      setResume(uploadedResume);
+      setCurrentCvUrl(uploadedResume.fileUrl || getResumeUrl());
+      toast({ title: "Resume uploaded successfully" });
     } catch (error: unknown) {
-      toast({ title: parseErrorMessage(error) || "CV upload failed", variant: "destructive" });
+      toast({ title: parseErrorMessage(error) || "Resume upload failed", variant: "destructive" });
     } finally {
-      setUploadingCV(false);
+      setUploadingResume(false);
+      setResumeFile(null);
+    }
+  };
+
+  const handleDeleteResume = async () => {
+    if (!adminToken) return;
+    if (!resume) {
+      toast({ title: "No resume to delete", variant: "destructive" });
+      return;
+    }
+    if (!confirm("Delete the current resume permanently?")) return;
+
+    setDeletingResume(true);
+    try {
+      await deleteResume(adminToken);
+      setResume(null);
+      setCurrentCvUrl(getResumeUrl());
+      toast({ title: "Resume deleted" });
+    } catch (error: unknown) {
+      toast({ title: parseErrorMessage(error) || "Resume delete failed", variant: "destructive" });
+    } finally {
+      setDeletingResume(false);
     }
   };
 
@@ -303,22 +330,85 @@ const AdminPanel = () => {
                 <div className="space-y-6">
                   <ScrollReveal>
                     <div className="glass rounded-3xl border border-border/50 p-8">
-                      <h2 className="font-heading text-2xl font-bold mb-4">Upload CV</h2>
-                      <form onSubmit={handleCVUpload} className="space-y-4">
-                        <label className="flex flex-col gap-2 rounded-2xl glass border border-border/50 p-4 cursor-pointer">
-                          <span className="text-sm text-foreground font-medium">CV PDF</span>
-                          <span className="text-xs text-muted-foreground">Only one CV is kept. Uploading replaces the current version.</span>
-                          <input type="file" accept="application/pdf" className="hidden" onChange={(e) => setCVFile(e.target.files?.[0] ?? null)} />
-                          <span className="text-sm text-primary">{cvFile ? cvFile.name : "Choose a PDF file"}</span>
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <h2 className="font-heading text-2xl font-bold">Resume</h2>
+                          <p className="mt-1 text-sm text-muted-foreground">Manage your current CV from one compact panel.</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-6 rounded-2xl border border-border/50 bg-background/40 p-4 shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-3">
+                            <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-400">
+                              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-foreground">Current Resume</p>
+                              <p className="text-xs text-muted-foreground">
+                                {resume ? resume.originalName || "resume.pdf" : "No resume uploaded yet."}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <a
+                              href={currentCvUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className={`inline-flex h-8 items-center justify-center rounded-lg border border-border/60 bg-background/60 px-3 text-xs font-medium text-foreground transition hover:border-primary/40 hover:text-primary ${resume ? "" : "pointer-events-none opacity-50"}`}
+                            >
+                              View
+                            </a>
+                            <button
+                              type="button"
+                              onClick={handleDeleteResume}
+                              disabled={!resume || deletingResume}
+                              className="inline-flex h-8 items-center justify-center rounded-lg border border-border/60 bg-background/60 px-3 text-xs font-medium text-foreground transition hover:border-destructive/40 hover:text-destructive disabled:opacity-50"
+                            >
+                              {deletingResume ? "Deleting..." : "Delete"}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 rounded-xl border border-border/50 bg-card/50 p-3">
+                          <div className="flex items-center gap-2">
+                            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-400">
+                              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            </span>
+                            <div>
+                              <p className="text-sm font-medium text-foreground">Resume Uploaded</p>
+                              <p className="text-xs text-muted-foreground">Selecting a PDF uploads it immediately and replaces the current resume.</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <label className="mt-4 flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-border/50 bg-background/50 px-4 py-3 transition hover:border-primary/40">
+                          <div>
+                            <p className="text-sm font-semibold text-foreground">Upload Resume</p>
+                            <p className="text-xs text-muted-foreground">
+                              {uploadingResume ? "Uploading..." : resumeFile ? resumeFile.name : "Choose a PDF to replace the current file"}
+                            </p>
+                          </div>
+                          <span className="rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground">
+                            {uploadingResume ? "Uploading..." : "Upload"}
+                          </span>
+                          <input
+                            type="file"
+                            accept="application/pdf"
+                            className="hidden"
+                            disabled={uploadingResume}
+                            onChange={(e) => {
+                              const selectedFile = e.target.files?.[0] ?? null;
+                              void handleResumeUpload(selectedFile);
+                              e.currentTarget.value = "";
+                            }}
+                          />
                         </label>
-                        <button type="submit" disabled={uploadingCV} className="w-full rounded-2xl bg-primary text-primary-foreground py-3 font-semibold hover:bg-primary/90 transition disabled:opacity-50">
-                          {uploadingCV ? "Uploading CV..." : "Upload CV"}
-                        </button>
-                      </form>
-                      <div className="mt-4 text-sm text-muted-foreground">
-                        <p>
-                          Current CV: <a href={currentCvUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline">View</a> · <a href={currentCvUrl} download className="text-primary hover:underline">Download</a>
-                        </p>
                       </div>
                     </div>
                   </ScrollReveal>

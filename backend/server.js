@@ -166,7 +166,7 @@ app.get('/health', (req, res) => {
 app.get('/cv.pdf', async (req, res) => {
   try {
     const resume = await Resume.findOne().sort({ updatedAt: -1 });
-    if (resume?.fileUrl) {
+    if (resume?.provider === 'cloudinary' && resume.fileUrl) {
       res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
       return res.redirect(resume.fileUrl);
     }
@@ -541,57 +541,126 @@ app.delete('/api/projects/:id', requireAdmin, async (req, res) => {
   }
 });
 
-// ── CV upload ─────────────────────────────────────────────────────────────────
+// ── Resume ────────────────────────────────────────────────────────────────────
 
-app.post('/api/admin/upload-cv', requireAdmin, uploadCV.single('cv'), async (req, res) => {
+const getResumeResponse = (req, resume) => ({
+  ...resume.toObject(),
+  fileUrl: `${getPublicBaseUrl(req)}/cv.pdf?ts=${Date.now()}`,
+});
+
+const deleteResumeFile = async (resume) => {
+  if (!resume) return;
+
+  if (resume.provider === 'cloudinary' && resume.publicId) {
+    await cloudinary.uploader.destroy(resume.publicId, { resource_type: 'raw' }).catch((destroyError) => {
+      console.warn('Could not delete Cloudinary resume:', destroyError.message);
+    });
+    return;
+  }
+
+  if (fs.existsSync(cvPath)) {
+    fs.unlinkSync(cvPath);
+  }
+};
+
+const saveSingleResume = async (req, file) => {
+  const previousResume = await Resume.findOne().sort({ updatedAt: -1 });
+  let uploadedPublicId = '';
+  let storedFileUrl = '/uploads/resume/cv.pdf';
+  let provider = 'local';
+
+  if (USE_CLOUDINARY) {
+    const uploadResult = await uploadBufferToCloudinary(file, 'portfolio/resume', 'cv');
+    uploadedPublicId = uploadResult.public_id;
+    storedFileUrl = uploadResult.secure_url;
+    provider = 'cloudinary';
+  }
+
+  const resume = await Resume.findOneAndUpdate(
+    {},
+    {
+      fileUrl: storedFileUrl,
+      publicId: uploadedPublicId,
+      provider,
+      originalName: file.originalname || 'resume.pdf',
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+
+  await Resume.deleteMany({ _id: { $ne: resume._id } });
+
+  if (
+    previousResume?.provider === 'cloudinary' &&
+    previousResume._id.toString() !== resume._id.toString()
+  ) {
+    await deleteResumeFile(previousResume);
+  }
+
+  return resume;
+};
+
+app.get('/api/resume', async (req, res) => {
+  try {
+    const resume = await Resume.findOne().sort({ updatedAt: -1 });
+    if (!resume) {
+      return res.status(404).json({ success: false, message: 'Resume not found' });
+    }
+
+    res.json({ success: true, resume: getResumeResponse(req, resume) });
+  } catch (error) {
+    console.error('Error fetching resume:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch resume' });
+  }
+});
+
+app.post('/api/resume', requireAdmin, uploadCV.single('resume'), async (req, res) => {
   let uploadedPublicId = '';
   try {
     if (!req.file) {
-      return res.status(400).json({ success: false, message: 'CV PDF file is required' });
+      return res.status(400).json({ success: false, message: 'Resume PDF file is required' });
     }
 
-    const previousResume = await Resume.findOne().sort({ updatedAt: -1 });
-    let storedFileUrl = '';
-    let provider = 'local';
-
-    if (USE_CLOUDINARY) {
-      const uploadResult = await uploadBufferToCloudinary(
-        req.file,
-        'portfolio/resume',
-        'cv'
-      );
-      storedFileUrl = uploadResult.secure_url;
-      uploadedPublicId = uploadResult.public_id;
-      provider = 'cloudinary';
-    } else {
-      storedFileUrl = toPublicUrl(req, '/cv.pdf');
-    }
-
-    const resume = await Resume.findOneAndUpdate(
-      {},
-      { fileUrl: storedFileUrl, publicId: uploadedPublicId, provider },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
-
-    if (
-      previousResume?.publicId &&
-      previousResume.provider === 'cloudinary' &&
-      previousResume.publicId !== uploadedPublicId
-    ) {
-      await cloudinary.uploader.destroy(previousResume.publicId, { resource_type: 'raw' }).catch((destroyError) => {
-        console.warn('Could not delete previous Cloudinary CV:', destroyError.message);
-      });
-    }
-
-    res.status(201).json({ success: true, fileUrl: `${getPublicBaseUrl(req)}/cv.pdf?ts=${Date.now()}`, resume });
+    const resume = await saveSingleResume(req, req.file);
+    uploadedPublicId = resume.publicId;
+    res.status(201).json({ success: true, resume: getResumeResponse(req, resume) });
   } catch (error) {
-    console.error('Error uploading CV:', error);
+    console.error('Error uploading resume:', error);
     if (uploadedPublicId) {
       await cloudinary.uploader.destroy(uploadedPublicId, { resource_type: 'raw' }).catch((destroyError) => {
-        console.warn('Could not clean up Cloudinary CV after failed save:', destroyError.message);
+        console.warn('Could not clean up Cloudinary resume after failed save:', destroyError.message);
       });
     }
-    res.status(500).json({ success: false, message: 'Failed to upload CV' });
+    res.status(500).json({ success: false, message: 'Failed to upload resume' });
+  }
+});
+
+app.post('/api/admin/upload-cv', requireAdmin, uploadCV.single('cv'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'Resume PDF file is required' });
+    }
+
+    const resume = await saveSingleResume(req, req.file);
+    res.status(201).json({ success: true, fileUrl: getResumeResponse(req, resume).fileUrl, resume });
+  } catch (error) {
+    console.error('Error uploading resume:', error);
+    res.status(500).json({ success: false, message: 'Failed to upload resume' });
+  }
+});
+
+app.delete('/api/resume', requireAdmin, async (req, res) => {
+  try {
+    const resume = await Resume.findOne().sort({ updatedAt: -1 });
+    if (!resume) {
+      return res.status(404).json({ success: false, message: 'Resume not found' });
+    }
+
+    await deleteResumeFile(resume);
+    await Resume.deleteMany({});
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting resume:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete resume' });
   }
 });
 
