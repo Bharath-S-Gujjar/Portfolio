@@ -22,7 +22,11 @@ import {
 } from "@/lib/api";
 
 const AdminPanel = () => {
-  const [adminToken, setAdminToken] = useState<string | null>(() => localStorage.getItem("adminToken"));
+  // const [adminToken, setAdminToken] = useState<string | null>(() => localStorage.getItem("adminToken"));
+
+  //30june admin token verification 
+  const [adminToken, setAdminToken] = useState<string | null>(() => sessionStorage.getItem("adminToken"));
+  
   const [password, setPassword] = useState("");
   const [activeTab, setActiveTab] = useState<"certificates" | "projects">("certificates");
   const [certificates, setCertificates] = useState<Certificate[]>([]);
@@ -88,7 +92,8 @@ const AdminPanel = () => {
     try {
       const { token } = await adminLogin(password);
       setAdminToken(token);
-      localStorage.setItem("adminToken", token);
+      // localStorage.setItem("adminToken", token);
+      sessionStorage.setItem("adminToken", token);
       setPassword("");
       toast({ title: "Admin access granted" });
     } catch (error: unknown) {
@@ -97,7 +102,8 @@ const AdminPanel = () => {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("adminToken");
+    // localStorage.removeItem("adminToken");
+    sessionStorage.removeItem("adminToken");
     setAdminToken(null);
     setCertificates([]);
     setProjects([]);

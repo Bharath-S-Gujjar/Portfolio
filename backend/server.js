@@ -226,6 +226,7 @@ const uploadCV = multer({
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const TOKEN_SECRET = process.env.TOKEN_SECRET || 'portfolio-admin-secret-key-change-in-production';
+const TOKEN_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 
 // Generate a signed token
 const generateAdminToken = () => {
@@ -235,19 +236,55 @@ const generateAdminToken = () => {
 };
 
 // Verify a signed token
+// const verifyAdminToken = (token) => {
+//   if (!token || typeof token !== 'string') return false;
+//   const parts = token.split(':');
+//   if (parts.length !== 3) return false; // payload:timestamp:signature
+  
+//   const [prefix, timestamp, signature] = parts;
+//   if (prefix !== 'admin') return false;
+  
+//   const payload = `${prefix}:${timestamp}`;
+//   const expectedSignature = crypto.createHmac('sha256', TOKEN_SECRET).update(payload).digest('hex');
+  
+//   return signature === expectedSignature;
+// };
+
+//30june admin token verification 
 const verifyAdminToken = (token) => {
   if (!token || typeof token !== 'string') return false;
+
   const parts = token.split(':');
-  if (parts.length !== 3) return false; // payload:timestamp:signature
-  
+  if (parts.length !== 3) return false;
+
   const [prefix, timestamp, signature] = parts;
+
   if (prefix !== 'admin') return false;
-  
+
   const payload = `${prefix}:${timestamp}`;
-  const expectedSignature = crypto.createHmac('sha256', TOKEN_SECRET).update(payload).digest('hex');
-  
-  return signature === expectedSignature;
+
+  const expectedSignature = crypto
+    .createHmac('sha256', TOKEN_SECRET)
+    .update(payload)
+    .digest('hex');
+
+  if (signature !== expectedSignature) {
+    return false;
+  }
+
+  const issuedAt = Number(timestamp);
+
+  if (!Number.isFinite(issuedAt)) {
+    return false;
+  }
+
+  if (Date.now() - issuedAt > TOKEN_EXPIRY_MS) {
+    return false;
+  }
+
+  return true;
 };
+
 
 const requireAdmin = (req, res, next) => {
   const auth = req.headers.authorization || '';
