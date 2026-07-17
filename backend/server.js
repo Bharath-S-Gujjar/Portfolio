@@ -45,6 +45,10 @@ if (!GROQ_API_KEY) {
   console.warn('⚠ Warning: GROQ_API_KEY not set. AI Chat will use mock responses.');
 }
 
+if (!USE_CLOUDINARY) {
+  console.warn('⚠ Warning: Cloudinary env vars not set. File uploads (resume/certificates) will use local disk, which is NOT persistent on Render and will be wiped on redeploy/restart.');
+}
+
 // ── Models ────────────────────────────────────────────────────────────────────
 
 const ContactMessage = require('./models/ContactMessage');
@@ -137,15 +141,16 @@ const localPathFromPublicUrl = (fileUrl) => {
   return resolvedPath.startsWith(resolvedBase) ? resolvedPath : null;
 };
 
-const uploadBufferToCloudinary = (file, folder, publicId) =>
+const uploadBufferToCloudinary = (file, folder, publicId, options = {}) =>
   new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
       {
         folder,
         public_id: publicId,
-        resource_type: 'raw',
+        resource_type: 'image',
         overwrite: true,
         use_filename: false,
+        ...options,
       },
       (error, result) => {
         if (error) return reject(error);
@@ -163,21 +168,41 @@ app.get('/health', (req, res) => {
   });
 });
 
+// ── FIXED: /cv.pdf now actually serves the file with the headers we want,
+// instead of redirecting (which threw away our Content-Disposition/Cache
+// headers and made browsers download instead of preview). Also guards
+// against a missing Resume document, which previously caused a crash
+// caught only by the generic 500 handler.
 app.get('/cv.pdf', async (req, res) => {
   try {
     const resume = await Resume.findOne().sort({ updatedAt: -1 });
-    if (resume?.provider === 'cloudinary' && resume.fileUrl) {
-      res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-      return res.redirect(resume.fileUrl);
+
+    if (!resume) {
+      return res.status(404).send('Resume not found');
+    }
+
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+    res.set('Content-Disposition', 'inline; filename="cv.pdf"');
+    res.set('Content-Type', 'application/pdf');
+
+    if (resume.provider === 'cloudinary' && resume.fileUrl) {
+      // Stream the file through our own server so OUR headers (inline
+      // disposition) are what the browser actually sees, instead of
+      // whatever Cloudinary would send on a redirect.
+      try {
+        const cloudRes = await axios.get(resume.fileUrl, { responseType: 'stream' });
+        return cloudRes.data.pipe(res);
+      } catch (streamError) {
+        console.error('Error streaming resume from Cloudinary:', streamError.message);
+        return res.status(502).send('Failed to fetch resume from storage');
+      }
     }
 
     if (!fs.existsSync(cvPath)) {
       return res.status(404).send('Not found');
     }
-    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.set('Pragma', 'no-cache');
-    res.set('Expires', '0');
-    res.set('Content-Disposition', 'inline; filename="cv.pdf"');
     return res.sendFile(cvPath);
   } catch (err) {
     console.error('Error serving CV:', err);
@@ -236,21 +261,6 @@ const generateAdminToken = () => {
 };
 
 // Verify a signed token
-// const verifyAdminToken = (token) => {
-//   if (!token || typeof token !== 'string') return false;
-//   const parts = token.split(':');
-//   if (parts.length !== 3) return false; // payload:timestamp:signature
-  
-//   const [prefix, timestamp, signature] = parts;
-//   if (prefix !== 'admin') return false;
-  
-//   const payload = `${prefix}:${timestamp}`;
-//   const expectedSignature = crypto.createHmac('sha256', TOKEN_SECRET).update(payload).digest('hex');
-  
-//   return signature === expectedSignature;
-// };
-
-//30june admin token verification 
 const verifyAdminToken = (token) => {
   if (!token || typeof token !== 'string') return false;
 
@@ -284,7 +294,6 @@ const verifyAdminToken = (token) => {
 
   return true;
 };
-
 
 const requireAdmin = (req, res, next) => {
   const auth = req.headers.authorization || '';
@@ -607,10 +616,9 @@ const saveSingleResume = async (req, file) => {
   let provider = 'local';
 
   if (USE_CLOUDINARY) {
-    const uploadResult = await uploadBufferToCloudinary(file, 'portfolio/resume', 'cv');
-      console.log("========== CLOUDINARY RESULT ==========");
-      console.log(uploadResult);
-      console.log("=======================================");
+    const uploadResult = await uploadBufferToCloudinary(file, 'portfolio/resume', 'cv', {
+      
+    });
     uploadedPublicId = uploadResult.public_id;
     storedFileUrl = uploadResult.secure_url;
     provider = 'cloudinary';
