@@ -147,7 +147,12 @@ const uploadBufferToCloudinary = (file, folder, publicId, options = {}) =>
       {
         folder,
         public_id: publicId,
-        resource_type: 'image',
+        // PDFs must be uploaded as 'raw', not 'image'. Cloudinary blocks
+        // direct delivery of PDFs uploaded under the 'image' resource type
+        // by default (a security restriction against PDF-based exploits
+        // served through image URLs) — that mismatch was causing "Failed
+        // to load PDF document" errors when viewing the resume.
+        resource_type: 'raw',
         overwrite: true,
         use_filename: false,
         ...options,
@@ -181,18 +186,23 @@ app.get('/cv.pdf', async (req, res) => {
       return res.status(404).send('Resume not found');
     }
 
-    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.set('Pragma', 'no-cache');
-    res.set('Expires', '0');
-    res.set('Content-Disposition', 'inline; filename="cv.pdf"');
-    res.set('Content-Type', 'application/pdf');
-
     if (resume.provider === 'cloudinary' && resume.fileUrl) {
       // Stream the file through our own server so OUR headers (inline
       // disposition) are what the browser actually sees, instead of
       // whatever Cloudinary would send on a redirect.
+      //
+      // IMPORTANT: only set Content-Type/Content-Disposition AFTER the
+      // upstream fetch succeeds. Setting them beforehand meant a failed
+      // fetch (e.g. Cloudinary rejecting the request) would still label
+      // the resulting error text as "application/pdf", which is what
+      // produced the "Failed to load PDF document" browser error.
       try {
         const cloudRes = await axios.get(resume.fileUrl, { responseType: 'stream' });
+        res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.set('Pragma', 'no-cache');
+        res.set('Expires', '0');
+        res.set('Content-Disposition', 'inline; filename="cv.pdf"');
+        res.set('Content-Type', 'application/pdf');
         return cloudRes.data.pipe(res);
       } catch (streamError) {
         console.error('Error streaming resume from Cloudinary:', streamError.message);
@@ -203,6 +213,10 @@ app.get('/cv.pdf', async (req, res) => {
     if (!fs.existsSync(cvPath)) {
       return res.status(404).send('Not found');
     }
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+    res.set('Content-Disposition', 'inline; filename="cv.pdf"');
     return res.sendFile(cvPath);
   } catch (err) {
     console.error('Error serving CV:', err);
