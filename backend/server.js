@@ -608,10 +608,14 @@ const saveSingleResume = async (req, file) => {
 
   if (USE_CLOUDINARY) {
     const uploadResult = await uploadBufferToCloudinary(file, 'portfolio/resume', 'cv');
+      console.log("========== CLOUDINARY RESULT ==========");
+      console.log(uploadResult);
+      console.log("=======================================");
     uploadedPublicId = uploadResult.public_id;
     storedFileUrl = uploadResult.secure_url;
     provider = 'cloudinary';
   }
+
 
   const resume = await Resume.findOneAndUpdate(
     {},
