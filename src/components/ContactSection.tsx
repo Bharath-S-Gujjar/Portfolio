@@ -1,5 +1,5 @@
 import React, { useState, useRef } from "react";
-import { Mail, Phone, Github, Linkedin } from "lucide-react";
+import { Mail, Phone, Github, Linkedin, Instagram } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { sendContactMessage } from "@/lib/api";
 import { getErrorMessage } from "@/lib/utils";
@@ -99,7 +99,8 @@ const ContactSection = () => {
                 {[
                   { icon: Mail, label: "bharathsgujjar635@gmail.com", href: "mailto:bharathsgujjar635@gmail.com" },
                   { icon: Phone, label: "+91 7022441738", href: "tel:+917022441738" },
-                  { icon: Linkedin, label: "LinkedIn", href: "https://linkedin.com/in/bharath-s-gujjar-5b0976297" },
+                  { icon: Instagram, label: "Instagram", href: "https://instagram.com/bharathgujjar_" },
+                  { icon: Linkedin, label: "LinkedIn", href: "https://www.linkedin.com/in/bharath-s-gujjar/" },
                   { icon: Github, label: "GitHub", href: "https://github.com/Bharath-S-Gujjar" },
                 ].map((item) => (
                   <motion.a

@@ -227,7 +227,10 @@ const HeroSection = () => {
             </p>
           </div>
           <div className="flex gap-6">
-            <a href="https://linkedin.com/in/bharath-s-gujjar-5b0976297" target="_blank" rel="noreferrer" className="hover:text-primary transition-colors group">
+            <a href="https://instagram.com/bharathgujjar_" target="_blank" rel="noreferrer" className="hover:text-primary transition-colors group">
+              <span className="text-muted-foreground group-hover:text-primary">/ </span>Instagram
+            </a>
+            <a href="https://www.linkedin.com/in/bharath-s-gujjar/" target="_blank" rel="noreferrer" className="hover:text-primary transition-colors group">
               <span className="text-muted-foreground group-hover:text-primary">/ </span>LinkedIn
             </a>
             <a href="https://github.com/Bharath-S-Gujjar" target="_blank" rel="noreferrer" className="hover:text-primary transition-colors group">
